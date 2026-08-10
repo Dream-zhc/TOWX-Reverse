@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #include <dispatch/dispatch.h>
 #include <fcntl.h>
+#include <math.h>
 #include <notify.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -32,6 +33,7 @@ static int gCountToken = 0;
 static int gStageToken = 0;
 static int gAckIndexToken = 0;
 static dispatch_source_t gUITimer;
+
 static uint64_t gRemoteCount = 0;
 static NSString *gWeChatExportDir = nil;
 static UIImage *gAvatars[TOWX_MAX_RECENTS];
@@ -47,7 +49,6 @@ static CGRect gRememberedBarFrame;
 static char kTOWXBoundIndexKey;
 static char kTOWXTapKey;
 static char kTOWXBlurKey;
-static char kTOWXStyledKey;
 
 static void TOWXEnsureLogDir(void) {
     (void)mkdir(kLogDir, 0755);
@@ -83,10 +84,11 @@ static const char *TOWXStageName(uint64_t stage) {
     switch (stage) {
         case 410: return "GOLDEN-MISSING";
         case 420: return "GOLDEN-FOUND";
-        case 430: return "SNAPSHOT-WAIT";
+        case 430: return "CACHE-WAIT";
         case 440: return "AVATAR-WAIT";
         case 450: return "SNAPSHOT-READY";
         case 470: return "SNAPSHOT-HOLD";
+        case 490: return "CACHE-BAD";
         default: return "UNKNOWN";
     }
 }
@@ -149,7 +151,7 @@ static NSString *TOWXResolveWeChatExportDir(void) {
 
 static NSUInteger TOWXLoadAvatars(void) {
     NSString *dir = TOWXResolveWeChatExportDir();
-    if (dir.length == 0) return 0;
+    if (dir.length == 0 || gRemoteCount == 0) return 0;
 
     NSUInteger loaded = 0;
     NSUInteger limited = MIN((NSUInteger)TOWX_MAX_RECENTS, (NSUInteger)gRemoteCount);
@@ -159,20 +161,18 @@ static NSUInteger TOWXLoadAvatars(void) {
             gAvatarMissLogged[index] = NO;
             continue;
         }
+
         NSString *path = [dir stringByAppendingPathComponent:
                           [NSString stringWithFormat:@"avatar%lu.png", (unsigned long)index]];
         UIImage *image = [UIImage imageWithContentsOfFile:path];
         if (image != nil) {
-            BOOL firstLoad = (gAvatars[index] == nil);
+            BOOL changed = (gAvatars[index] == nil || ![gAvatars[index] isEqual:image]);
             gAvatars[index] = image;
             gAvatarMissLogged[index] = NO;
             loaded += 1;
-            if (firstLoad) {
+            if (changed) {
                 TOWXLog("TOWX|SB|P2A4|AVATAR-LOAD-PASS|index=%lu|path=%s|size=%.0fx%.0f",
-                        (unsigned long)index,
-                        path.UTF8String,
-                        image.size.width,
-                        image.size.height);
+                        (unsigned long)index, path.UTF8String, image.size.width, image.size.height);
             }
         } else if (!gAvatarMissLogged[index]) {
             gAvatarMissLogged[index] = YES;
@@ -185,7 +185,7 @@ static NSUInteger TOWXLoadAvatars(void) {
 
 static BOOL TOWXAncestorsAboveViewAreVisible(UIView *view) {
     if (view == nil || view.window == nil) return NO;
-    UIView *cursor = view.superview;
+    UIView *cursor = view;
     while (cursor != nil) {
         if (cursor.hidden || cursor.alpha <= 0.01) return NO;
         cursor = cursor.superview;
@@ -214,9 +214,7 @@ static void TOWXCollectSlotLabels(UIView *view, NSMutableArray<UILabel *> *label
     if ([view isKindOfClass:[UILabel class]] && TOWXLabelLooksLikeOriginalSlot((UILabel *)view)) {
         [labels addObject:(UILabel *)view];
     }
-    for (UIView *subview in view.subviews) {
-        TOWXCollectSlotLabels(subview, labels);
-    }
+    for (UIView *subview in view.subviews) TOWXCollectSlotLabels(subview, labels);
 }
 
 @interface TOWXLinkTapTarget : NSObject
@@ -239,7 +237,7 @@ static NSUInteger TOWXBindCurrentBars(void);
     NSNumber *number = view ? objc_getAssociatedObject(view, &kTOWXBoundIndexKey) : nil;
     if (![number isKindOfClass:[NSNumber class]]) return;
     NSUInteger index = number.unsignedIntegerValue;
-    if (index >= TOWX_MAX_RECENTS || index >= gRemoteCount) return;
+    if (index >= TOWX_MAX_RECENTS || gRemoteCount == 0 || index >= gRemoteCount) return;
 
     gSelectedIndex = (NSInteger)index;
     char name[96];
@@ -267,12 +265,9 @@ static void TOWXRememberBar(UIScrollView *scroll) {
         gRememberedBarParent = container.superview;
         gRememberedBarFrame = container.frame;
         TOWXLog("TOWX|SB|P2A4|BAR-REMEMBER|container=%p|parent=%p|frame={{%.1f,%.1f},{%.1f,%.1f}}",
-                container,
-                container.superview,
-                container.frame.origin.x,
-                container.frame.origin.y,
-                container.frame.size.width,
-                container.frame.size.height);
+                container, container.superview,
+                container.frame.origin.x, container.frame.origin.y,
+                container.frame.size.width, container.frame.size.height);
     } else {
         gRememberedBarFrame = container.frame;
     }
@@ -280,8 +275,7 @@ static void TOWXRememberBar(UIScrollView *scroll) {
 
 static void TOWXStyleBar(UIScrollView *scroll) {
     UIView *container = TOWXBarContainer(scroll);
-    if (container == nil) return;
-    if (!TOWXAncestorsAboveViewAreVisible(container)) return;
+    if (container == nil || !TOWXAncestorsAboveViewAreVisible(container)) return;
 
     scroll.hidden = NO;
     scroll.alpha = 1.0;
@@ -295,7 +289,7 @@ static void TOWXStyleBar(UIScrollView *scroll) {
     CGFloat radius = MIN(30.0, MAX(18.0, CGRectGetHeight(container.bounds) * 0.34));
     container.layer.cornerRadius = radius;
     container.layer.borderWidth = 0.6;
-    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.38].CGColor;
+    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.32].CGColor;
     container.clipsToBounds = YES;
 
     UIVisualEffectView *blur = objc_getAssociatedObject(container, &kTOWXBlurKey);
@@ -304,30 +298,22 @@ static void TOWXStyleBar(UIScrollView *scroll) {
         blur = [[UIVisualEffectView alloc] initWithEffect:effect];
         blur.userInteractionEnabled = NO;
         blur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        blur.layer.cornerRadius = radius;
         blur.clipsToBounds = YES;
-        blur.contentView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.10];
         [container insertSubview:blur atIndex:0];
         objc_setAssociatedObject(container, &kTOWXBlurKey, blur, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(container, &kTOWXStyledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         TOWXLog("TOWX|SB|P2A4|BAR-STYLE|container=%p|mode=systemMaterialLight", container);
     }
     blur.frame = container.bounds;
     blur.layer.cornerRadius = radius;
     [container sendSubviewToBack:blur];
-
-    if (container.superview != nil) {
-        [container.superview bringSubviewToFront:container];
-    }
+    if (container.superview != nil) [container.superview bringSubviewToFront:container];
     TOWXRememberBar(scroll);
 }
 
 static UIImage *TOWXPlaceholderImage(void) {
     static UIImage *image = nil;
     static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        image = [UIImage systemImageNamed:@"person.crop.circle.fill"];
-    });
+    dispatch_once(&onceToken, ^{ image = [UIImage systemImageNamed:@"person.crop.circle.fill"]; });
     return image;
 }
 
@@ -339,17 +325,18 @@ static void TOWXBindLabel(UILabel *label, NSUInteger index) {
         return;
     }
 
-    BOOL available = index < gRemoteCount;
+    BOOL dataKnown = gRemoteCount > 0;
+    BOOL available = dataKnown && index < gRemoteCount;
+    BOOL showSlot = !dataKnown || available;
+
     NSNumber *oldBound = objc_getAssociatedObject(label, &kTOWXBoundIndexKey);
     BOOL firstBind = ![oldBound isKindOfClass:[NSNumber class]];
     objc_setAssociatedObject(label, &kTOWXBoundIndexKey, @(index), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     label.text = @"";
-    label.hidden = !available;
-    label.alpha = available ? 1.0 : 0.0;
+    label.hidden = !showSlot;
+    label.alpha = showSlot ? 1.0 : 0.0;
     label.backgroundColor = UIColor.clearColor;
-    label.layer.cornerRadius = MIN(CGRectGetWidth(label.bounds), CGRectGetHeight(label.bounds)) * 0.5;
-    label.clipsToBounds = NO;
     label.userInteractionEnabled = available;
 
     if (firstBind) {
@@ -359,11 +346,11 @@ static void TOWXBindLabel(UILabel *label, NSUInteger index) {
         [label addGestureRecognizer:tap];
         objc_setAssociatedObject(label, &kTOWXTapKey, tap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         gBindSerial += 1;
-        TOWXLog("TOWX|SB|P2A4|BAR-BIND|serial=%u|position=%lu|label=%p|original=%s",
+        TOWXLog("TOWX|SB|P2A4|BAR-BIND|serial=%u|position=%lu|label=%p|source=%s",
                 gBindSerial,
                 (unsigned long)index,
                 label,
-                oldBound ? "bound" : "letter");
+                oldBound ? "reused" : "raw-letter");
     }
 
     NSInteger imageTag = 0x545740;
@@ -379,30 +366,25 @@ static void TOWXBindLabel(UILabel *label, NSUInteger index) {
 
     imageView.frame = CGRectInset(label.bounds, 4.0, 4.0);
     imageView.layer.cornerRadius = MAX(0.0, MIN(CGRectGetWidth(imageView.bounds), CGRectGetHeight(imageView.bounds)) * 0.5);
-    imageView.layer.borderWidth = (gSelectedIndex == (NSInteger)index) ? 2.2 : 1.2;
-    imageView.layer.borderColor = (gSelectedIndex == (NSInteger)index ? UIColor.systemGreenColor : [UIColor colorWithWhite:1.0 alpha:0.78]).CGColor;
     imageView.backgroundColor = UIColor.secondarySystemFillColor;
 
-    UIImage *avatar = gAvatars[index];
+    UIImage *avatar = available ? gAvatars[index] : nil;
     UIImage *nextImage = avatar ?: TOWXPlaceholderImage();
-    BOOL changed = imageView.image != nextImage;
     imageView.image = nextImage;
     if (avatar != nil) {
         imageView.contentMode = UIViewContentModeScaleAspectFill;
         imageView.tintColor = nil;
+        imageView.alpha = 1.0;
     } else {
         imageView.contentMode = UIViewContentModeScaleAspectFit;
         imageView.tintColor = UIColor.tertiaryLabelColor;
+        imageView.alpha = dataKnown ? 0.72 : 0.38;
     }
 
-    if (changed && available) {
-        imageView.alpha = 0.55;
-        [UIView animateWithDuration:0.18 animations:^{
-            imageView.alpha = 1.0;
-        }];
-    } else {
-        imageView.alpha = 1.0;
-    }
+    imageView.layer.borderWidth = (available && gSelectedIndex == (NSInteger)index) ? 2.0 : 1.0;
+    imageView.layer.borderColor = (available && gSelectedIndex == (NSInteger)index
+                                   ? UIColor.systemGreenColor
+                                   : [UIColor colorWithWhite:1.0 alpha:0.65]).CGColor;
 }
 
 static BOOL TOWXBindCandidateScrollView(UIScrollView *scroll) {
@@ -433,19 +415,15 @@ static BOOL TOWXBindCandidateScrollView(UIScrollView *scroll) {
 
 static NSUInteger TOWXScanForBars(UIView *view) {
     NSUInteger found = 0;
-    if ([view isKindOfClass:[UIScrollView class]]) {
-        if (TOWXBindCandidateScrollView((UIScrollView *)view)) found += 1;
-    }
-    for (UIView *subview in view.subviews) {
-        found += TOWXScanForBars(subview);
-    }
+    if ([view isKindOfClass:[UIScrollView class]] && TOWXBindCandidateScrollView((UIScrollView *)view)) found += 1;
+    for (UIView *subview in view.subviews) found += TOWXScanForBars(subview);
     return found;
 }
 
 static BOOL TOWXRestoreRememberedBar(void) {
     UIView *container = gRememberedBarContainer;
     UIView *parent = gRememberedBarParent;
-    if (container == nil || parent == nil || parent.window == nil || !TOWXAncestorsAboveViewAreVisible(parent)) return NO;
+    if (container == nil || parent == nil || parent.window == nil) return NO;
 
     if (container.superview == nil) {
         container.frame = gRememberedBarFrame;
@@ -455,12 +433,12 @@ static BOOL TOWXRestoreRememberedBar(void) {
     container.hidden = NO;
     container.alpha = 1.0;
     [parent bringSubviewToFront:container];
-    TOWXLog("TOWX|SB|P2A4|BAR-RESTORE|container=%p|parent=%p", container, parent);
+    TOWXLog("TOWX|SB|P2A4|BAR-RESTORE|container=%p|parent=%p|count=%llu",
+            container, parent, (unsigned long long)gRemoteCount);
     return YES;
 }
 
 static NSUInteger TOWXBindCurrentBars(void) {
-    if (gRemoteCount == 0) return 0;
     UIApplication *application = UIApplication.sharedApplication;
     NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
     [windows addObjectsFromArray:application.windows ?: @[]];
@@ -477,9 +455,7 @@ static NSUInteger TOWXBindCurrentBars(void) {
         if (window.hidden || window.alpha <= 0.01) continue;
         found += TOWXScanForBars(window);
     }
-    if (found == 0) {
-        (void)TOWXRestoreRememberedBar();
-    }
+    if (found == 0) (void)TOWXRestoreRememberedBar();
     return found;
 }
 
@@ -502,15 +478,14 @@ static void TOWXHandleReady(void) {
             (unsigned long long)count);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if ((stage == 450 || stage == 470) && gRemoteCount > 0) {
-            NSUInteger loaded = TOWXLoadAvatars();
-            NSUInteger bars = TOWXBindCurrentBars();
-            TOWXLog("TOWX|SB|P2A4|SYNC|count=%llu|loaded=%lu|bars=%lu|mode=%s",
-                    (unsigned long long)gRemoteCount,
-                    (unsigned long)loaded,
-                    (unsigned long)bars,
-                    stage == 450 ? "refresh" : "hold");
-        }
+        NSUInteger loaded = 0;
+        if (gRemoteCount > 0 && (stage == 450 || stage == 440 || stage == 470)) loaded = TOWXLoadAvatars();
+        NSUInteger bars = TOWXBindCurrentBars();
+        TOWXLog("TOWX|SB|P2A4|SYNC|count=%llu|loaded=%lu|bars=%lu|stage=%llu",
+                (unsigned long long)gRemoteCount,
+                (unsigned long)loaded,
+                (unsigned long)bars,
+                (unsigned long long)stage);
     });
 }
 
@@ -519,27 +494,19 @@ static void TOWXHandleAck(void) {
     if (TOWXReadToken(gAckIndexToken, &index)) {
         gSelectedIndex = index < TOWX_MAX_RECENTS ? (NSInteger)index : NSNotFound;
         TOWXLog("TOWX|SB|P2A4|OPEN-ACK|index=%llu", (unsigned long long)index);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            (void)TOWXBindCurrentBars();
-        });
-    } else {
-        TOWXLog("TOWX|SB|P2A4|OPEN-ACK-READ-FAIL");
+        dispatch_async(dispatch_get_main_queue(), ^{ (void)TOWXBindCurrentBars(); });
     }
 }
 
 static void TOWXScheduleLifecycleRebind(NSString *reason) {
     TOWXLog("TOWX|SB|P2A4|LIFECYCLE|reason=%s", reason.UTF8String ?: "unknown");
-    dispatch_async(dispatch_get_main_queue(), ^{
-        (void)TOWXBindCurrentBars();
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(180 * NSEC_PER_MSEC)),
-                   dispatch_get_main_queue(), ^{
-        (void)TOWXBindCurrentBars();
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(550 * NSEC_PER_MSEC)),
-                   dispatch_get_main_queue(), ^{
-        (void)TOWXBindCurrentBars();
-    });
+    dispatch_async(dispatch_get_main_queue(), ^{ (void)TOWXBindCurrentBars(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(80 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), ^{ (void)TOWXBindCurrentBars(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(260 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), ^{ (void)TOWXBindCurrentBars(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(700 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), ^{ (void)TOWXBindCurrentBars(); });
 }
 
 static void TOWXInstallLifecycleObservers(void) {
@@ -557,29 +524,22 @@ static void TOWXInstallLifecycleObservers(void) {
 
 static void TOWXStartUITimer(void) {
     gUITimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-    if (gUITimer == nil) {
-        TOWXLog("TOWX|SB|P2A4|UI-TIMER-FAIL");
-        return;
-    }
+    if (gUITimer == nil) return;
     dispatch_source_set_timer(gUITimer,
                               dispatch_time(DISPATCH_TIME_NOW, 0),
-                              (uint64_t)(NSEC_PER_SEC * 2U / 5U),
-                              (uint64_t)(NSEC_PER_SEC / 25U));
+                              (uint64_t)(NSEC_PER_SEC / 4U),
+                              (uint64_t)(NSEC_PER_SEC / 40U));
     dispatch_source_set_event_handler(gUITimer, ^{
         gResolveTick += 1;
-        if (gWeChatExportDir.length == 0 && (gResolveTick % 5U) == 0U) {
-            (void)TOWXResolveWeChatExportDir();
-        }
-        if (gRemoteCount > 0) {
-            if ((gResolveTick % 3U) == 0U) (void)TOWXLoadAvatars();
-            (void)TOWXBindCurrentBars();
-        }
+        if (gWeChatExportDir.length == 0 && (gResolveTick % 4U) == 0U) (void)TOWXResolveWeChatExportDir();
+        if (gRemoteCount > 0 && (gResolveTick % 2U) == 0U) (void)TOWXLoadAvatars();
+        (void)TOWXBindCurrentBars();
     });
     dispatch_resume(gUITimer);
 }
 
 __attribute__((constructor)) static void TOWXSpringBoardDataBridgeInit(void) {
-    TOWXLog("TOWX|SB|P2A4|LOADED|v0.4.0|mode=snapshot+position-slots+glass+lifecycle");
+    TOWXLog("TOWX|SB|P2A4|LOADED|v0.5.0|mode=P2A3-data+position-slots+prebind+lifecycle");
 
     if (!TOWXRegisterState(TOWX_LINK_GENERATION, &gGenerationToken) ||
         !TOWXRegisterState(TOWX_LINK_COUNT, &gCountToken) ||
@@ -606,6 +566,7 @@ __attribute__((constructor)) static void TOWXSpringBoardDataBridgeInit(void) {
 
     dispatch_async(dispatch_get_main_queue(), ^{
         TOWXInstallLifecycleObservers();
+        (void)TOWXBindCurrentBars();
         TOWXStartUITimer();
     });
 }
