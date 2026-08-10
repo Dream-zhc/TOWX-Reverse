@@ -371,7 +371,7 @@ static UINavigationController *TOWXFindNavigationController(UIViewController *co
         UINavigationController *found = TOWXFindNavigationController(controller.presentedViewController);
         if (found != nil) return found;
     }
-    for (UIViewController *child in controller.children) {
+    for (UIViewController *child in controller.childViewControllers) {
         UINavigationController *found = TOWXFindNavigationController(child);
         if (found != nil) return found;
     }
