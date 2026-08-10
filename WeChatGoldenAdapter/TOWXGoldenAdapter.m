@@ -25,6 +25,7 @@
 #define TOWX_GOLDEN_BAR_OFFSET ((uintptr_t)0x4050)
 #define TOWX_GOLDEN_TABLE_OFFSET ((uintptr_t)0x4070)
 #define TOWX_GOLDEN_COUNT_OFFSET ((uintptr_t)0x4078)
+#define TOWX_GOLDEN_PATHS_OFFSET ((uintptr_t)0x4080)
 #define TOWX_MAX_RECENTS 6U
 
 static dispatch_source_t gTimer;
@@ -34,6 +35,12 @@ static uint64_t gLastStage = UINT64_MAX;
 static uint64_t gLastCount = UINT64_MAX;
 static NSUInteger gAvatarHashes[TOWX_MAX_RECENTS];
 static unsigned int gTick = 0;
+static BOOL gSuppressionLogged = NO;
+
+static UITableView *gSnapshotTable = nil;
+static NSIndexPath *gSnapshotPaths[TOWX_MAX_RECENTS] = { nil, nil, nil, nil, nil, nil };
+static NSUInteger gSnapshotCount = 0;
+static uint64_t gSnapshotSerial = 0;
 
 static int gGenerationToken = 0;
 static int gCountToken = 0;
@@ -47,7 +54,7 @@ static NSString *TOWXCachesRoot(void) {
 }
 
 static NSString *TOWXExportDir(void) {
-    NSString *dir = [TOWXCachesRoot() stringByAppendingPathComponent:@"TOWXLinkP2A3"];
+    NSString *dir = [TOWXCachesRoot() stringByAppendingPathComponent:@"TOWXLinkP2A4"];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                               withIntermediateDirectories:YES
                                                attributes:nil
@@ -56,19 +63,19 @@ static NSString *TOWXExportDir(void) {
 }
 
 static NSString *TOWXLogPath(void) {
-    return [TOWXCachesRoot() stringByAppendingPathComponent:@"TOWX-Link-WeChat.log"];
+    return [TOWXCachesRoot() stringByAppendingPathComponent:@"TOWX-Link-WeChat-P2A4.log"];
 }
 
 static void TOWXLog(const char *format, ...) {
     @autoreleasepool {
-        char body[896];
+        char body[1024];
         va_list args;
         va_start(args, format);
         int bodyLength = vsnprintf(body, sizeof(body), format, args);
         va_end(args);
         if (bodyLength < 0) return;
 
-        char line[1024];
+        char line[1152];
         time_t now = time(NULL);
         int lineLength = snprintf(line, sizeof(line), "%lld %s\n", (long long)now, body);
         if (lineLength <= 0) return;
@@ -86,7 +93,7 @@ static void TOWXLog(const char *format, ...) {
 static int TOWXRegisterState(const char *name, int *token) {
     uint32_t status = notify_register_check(name, token);
     if (status != NOTIFY_STATUS_OK) {
-        TOWXLog("TOWX|WX|LINK|STATE-REGISTER-FAIL|name=%s|status=%u", name, status);
+        TOWXLog("TOWX|WX|P2A4|STATE-REGISTER-FAIL|name=%s|status=%u", name, status);
         return 0;
     }
     return 1;
@@ -103,7 +110,7 @@ static uintptr_t TOWXFindGoldenBase(void) {
         if (name == NULL || strstr(name, TOWX_GOLDEN_IMAGE) == NULL) continue;
         const struct mach_header *header = _dyld_get_image_header(index);
         if (header != NULL) {
-            TOWXLog("TOWX|WX|LINK|GOLDEN-FOUND|image=%s|base=0x%llx",
+            TOWXLog("TOWX|WX|P2A4|GOLDEN-FOUND|image=%s|base=0x%llx",
                     name, (unsigned long long)(uintptr_t)header);
             return (uintptr_t)header;
         }
@@ -136,6 +143,64 @@ static UIButton *TOWXFindButton(UIView *view, NSInteger tag) {
     return nil;
 }
 
+static BOOL TOWXViewIsActuallyVisible(UIView *view) {
+    if (view == nil || view.window == nil) return NO;
+    UIView *cursor = view;
+    while (cursor != nil) {
+        if (cursor.hidden || cursor.alpha <= 0.01) return NO;
+        cursor = cursor.superview;
+    }
+    return YES;
+}
+
+static UITabBar *TOWXFindVisibleTabBar(UIView *view) {
+    if ([view isKindOfClass:[UITabBar class]] && TOWXViewIsActuallyVisible(view)) {
+        UITabBar *tabBar = (UITabBar *)view;
+        CGFloat height = CGRectGetHeight(tabBar.bounds);
+        CGFloat width = CGRectGetWidth(tabBar.bounds);
+        if (height >= 35.0 && height <= 120.0 && width >= 220.0) return tabBar;
+    }
+    for (UIView *subview in view.subviews) {
+        UITabBar *found = TOWXFindVisibleTabBar(subview);
+        if (found != nil) return found;
+    }
+    return nil;
+}
+
+static BOOL TOWXMainMessagesListVisible(void) {
+    UIApplication *application = UIApplication.sharedApplication;
+    NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
+    [windows addObjectsFromArray:application.windows ?: @[]];
+    if (windows.count == 0) {
+        for (UIScene *scene in application.connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                [windows addObjectsFromArray:((UIWindowScene *)scene).windows ?: @[]];
+            }
+        }
+    }
+
+    for (UIWindow *window in windows) {
+        if (!TOWXViewIsActuallyVisible(window)) continue;
+        UITabBar *tabBar = TOWXFindVisibleTabBar(window);
+        if (tabBar == nil || tabBar.items.count == 0 || tabBar.selectedItem == nil) continue;
+        NSUInteger selected = [tabBar.items indexOfObject:tabBar.selectedItem];
+        if (selected == 0) return YES;
+    }
+    return NO;
+}
+
+static void TOWXSuppressGoldenInAppBar(UIView *bar) {
+    if (bar == nil) return;
+    BOOL wasVisible = !bar.hidden || bar.alpha > 0.01;
+    bar.hidden = YES;
+    bar.alpha = 0.0;
+    bar.userInteractionEnabled = NO;
+    if (wasVisible || !gSuppressionLogged) {
+        TOWXLog("TOWX|WX|P2A4|INAPP-BAR-SUPPRESS|bar=%p|super=%p", bar, bar.superview);
+        gSuppressionLogged = YES;
+    }
+}
+
 static void TOWXPublish(uint64_t stage, uint64_t count, int force) {
     if (!force && stage == gLastStage && count == gLastCount) return;
 
@@ -143,7 +208,7 @@ static void TOWXPublish(uint64_t stage, uint64_t count, int force) {
     if (!TOWXSetToken(gGenerationToken, gGeneration) ||
         !TOWXSetToken(gCountToken, count) ||
         !TOWXSetToken(gStageToken, stage)) {
-        TOWXLog("TOWX|WX|LINK|STATE-WRITE-FAIL|generation=%llu|stage=%llu|count=%llu",
+        TOWXLog("TOWX|WX|P2A4|STATE-WRITE-FAIL|generation=%llu|stage=%llu|count=%llu",
                 (unsigned long long)gGeneration,
                 (unsigned long long)stage,
                 (unsigned long long)count);
@@ -153,10 +218,61 @@ static void TOWXPublish(uint64_t stage, uint64_t count, int force) {
     gLastStage = stage;
     gLastCount = count;
     notify_post(TOWX_LINK_READY);
-    TOWXLog("TOWX|WX|LINK|PUBLISH|generation=%llu|stage=%llu|count=%llu",
+    TOWXLog("TOWX|WX|P2A4|PUBLISH|generation=%llu|stage=%llu|count=%llu|snapshot=%llu",
             (unsigned long long)gGeneration,
             (unsigned long long)stage,
-            (unsigned long long)count);
+            (unsigned long long)count,
+            (unsigned long long)gSnapshotSerial);
+}
+
+static BOOL TOWXIndexPathIsValid(UITableView *table, NSIndexPath *indexPath) {
+    if (table == nil || indexPath == nil) return NO;
+    NSInteger section = indexPath.section;
+    NSInteger row = indexPath.row;
+    if (section < 0 || row < 0) return NO;
+    NSInteger sections = [table numberOfSections];
+    if (section >= sections) return NO;
+    NSInteger rows = [table numberOfRowsInSection:section];
+    return row < rows;
+}
+
+static NSUInteger TOWXCaptureGoldenSnapshot(void) {
+    UITableView *table = (UITableView *)TOWXGoldenObjectAtOffset(TOWX_GOLDEN_TABLE_OFFSET);
+    uint64_t count64 = TOWXGoldenCount();
+    if (![table isKindOfClass:[UITableView class]] || count64 == 0 || count64 > TOWX_MAX_RECENTS) {
+        return 0;
+    }
+
+    NSUInteger requested = (NSUInteger)count64;
+    NSIndexPath *paths[TOWX_MAX_RECENTS] = { nil, nil, nil, nil, nil, nil };
+    NSUInteger usable = 0;
+    for (NSUInteger index = 0; index < requested; index++) {
+        NSIndexPath *path = (NSIndexPath *)TOWXGoldenObjectAtOffset(TOWX_GOLDEN_PATHS_OFFSET + index * sizeof(uintptr_t));
+        if (![path isKindOfClass:[NSIndexPath class]] || !TOWXIndexPathIsValid(table, path)) {
+            TOWXLog("TOWX|WX|P2A4|SNAPSHOT-PATH-MISS|index=%lu|path=%p",
+                    (unsigned long)index, path);
+            break;
+        }
+        paths[index] = path;
+        usable += 1;
+    }
+
+    if (usable == 0) return 0;
+
+    gSnapshotTable = table;
+    gSnapshotCount = usable;
+    for (NSUInteger index = 0; index < TOWX_MAX_RECENTS; index++) {
+        gSnapshotPaths[index] = index < usable ? paths[index] : nil;
+    }
+    gSnapshotSerial += 1;
+
+    TOWXLog("TOWX|WX|P2A4|SNAPSHOT-CAPTURE|serial=%llu|table=%p|count=%lu|first=%ld:%ld",
+            (unsigned long long)gSnapshotSerial,
+            gSnapshotTable,
+            (unsigned long)gSnapshotCount,
+            (long)gSnapshotPaths[0].section,
+            (long)gSnapshotPaths[0].row);
+    return gSnapshotCount;
 }
 
 static NSUInteger TOWXExportAvatars(UIView *bar, NSUInteger count, BOOL *changedOut) {
@@ -168,7 +284,7 @@ static NSUInteger TOWXExportAvatars(UIView *bar, NSUInteger count, BOOL *changed
     for (NSUInteger index = 0; index < limited; index++) {
         UIButton *button = TOWXFindButton(bar, (NSInteger)(100U + index));
         if (button == nil) {
-            TOWXLog("TOWX|WX|LINK|AVATAR-BUTTON-MISS|index=%lu", (unsigned long)index);
+            TOWXLog("TOWX|WX|P2A4|AVATAR-BUTTON-MISS|index=%lu", (unsigned long)index);
             continue;
         }
 
@@ -176,13 +292,13 @@ static NSUInteger TOWXExportAvatars(UIView *bar, NSUInteger count, BOOL *changed
         if (image == nil) image = button.currentImage;
         if (image == nil) image = button.imageView.image;
         if (image == nil) {
-            TOWXLog("TOWX|WX|LINK|AVATAR-IMAGE-MISS|index=%lu", (unsigned long)index);
+            TOWXLog("TOWX|WX|P2A4|AVATAR-IMAGE-MISS|index=%lu", (unsigned long)index);
             continue;
         }
 
         NSData *data = UIImagePNGRepresentation(image);
         if (data.length == 0) {
-            TOWXLog("TOWX|WX|LINK|AVATAR-ENCODE-FAIL|index=%lu", (unsigned long)index);
+            TOWXLog("TOWX|WX|P2A4|AVATAR-ENCODE-FAIL|index=%lu", (unsigned long)index);
             continue;
         }
 
@@ -192,13 +308,13 @@ static NSUInteger TOWXExportAvatars(UIView *bar, NSUInteger count, BOOL *changed
         if (gAvatarHashes[index] != hash || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
             NSError *error = nil;
             if (![data writeToFile:path options:NSDataWritingAtomic error:&error]) {
-                TOWXLog("TOWX|WX|LINK|AVATAR-WRITE-FAIL|index=%lu|error=%s",
+                TOWXLog("TOWX|WX|P2A4|AVATAR-WRITE-FAIL|index=%lu|error=%s",
                         (unsigned long)index, error.localizedDescription.UTF8String ?: "unknown");
                 continue;
             }
             gAvatarHashes[index] = hash;
             changed = YES;
-            TOWXLog("TOWX|WX|LINK|AVATAR-EXPORT|index=%lu|bytes=%lu|hash=%lu|path=%s",
+            TOWXLog("TOWX|WX|P2A4|AVATAR-EXPORT|index=%lu|bytes=%lu|hash=%lu|path=%s",
                     (unsigned long)index,
                     (unsigned long)data.length,
                     (unsigned long)hash,
@@ -221,91 +337,179 @@ static NSUInteger TOWXExportAvatars(UIView *bar, NSUInteger count, BOOL *changed
     return exported;
 }
 
+static UIWindow *TOWXActiveWindow(void) {
+    UIApplication *application = UIApplication.sharedApplication;
+    for (UIScene *scene in application.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        if (windowScene.activationState != UISceneActivationStateForegroundActive) continue;
+        for (UIWindow *window in windowScene.windows) {
+            if (window.isKeyWindow) return window;
+        }
+        for (UIWindow *window in windowScene.windows) {
+            if (!window.hidden && window.alpha > 0.01) return window;
+        }
+    }
+    for (UIWindow *window in application.windows) {
+        if (window.isKeyWindow) return window;
+    }
+    return application.windows.firstObject;
+}
+
+static UINavigationController *TOWXFindNavigationController(UIViewController *controller) {
+    if (controller == nil) return nil;
+    if ([controller isKindOfClass:[UITabBarController class]]) {
+        UIViewController *selected = ((UITabBarController *)controller).selectedViewController;
+        UINavigationController *found = TOWXFindNavigationController(selected);
+        if (found != nil) return found;
+    }
+    if ([controller isKindOfClass:[UINavigationController class]]) {
+        return (UINavigationController *)controller;
+    }
+    if (controller.presentedViewController != nil) {
+        UINavigationController *found = TOWXFindNavigationController(controller.presentedViewController);
+        if (found != nil) return found;
+    }
+    for (UIViewController *child in controller.children) {
+        UINavigationController *found = TOWXFindNavigationController(child);
+        if (found != nil) return found;
+    }
+    return controller.navigationController;
+}
+
+static void TOWXAck(NSUInteger index) {
+    (void)TOWXSetToken(gAckIndexToken, (uint64_t)index);
+    notify_post(TOWX_LINK_ACK);
+}
+
+static void TOWXOpenSnapshotAtIndex(NSUInteger index) {
+    UITableView *table = gSnapshotTable;
+    NSIndexPath *path = index < TOWX_MAX_RECENTS ? gSnapshotPaths[index] : nil;
+    if (table == nil || path == nil || index >= gSnapshotCount) {
+        TOWXLog("TOWX|WX|P2A4|OPEN-MISS|index=%lu|reason=snapshot|count=%lu|table=%p|path=%p",
+                (unsigned long)index, (unsigned long)gSnapshotCount, table, path);
+        return;
+    }
+
+    UIWindow *window = TOWXActiveWindow();
+    UINavigationController *navigation = TOWXFindNavigationController(window.rootViewController);
+    if (navigation != nil && navigation.viewControllers.count > 1) {
+        TOWXLog("TOWX|WX|P2A4|NAV-RESET|index=%lu|depth=%lu|top=%s",
+                (unsigned long)index,
+                (unsigned long)navigation.viewControllers.count,
+                NSStringFromClass(navigation.topViewController.class).UTF8String ?: "unknown");
+        [navigation popToRootViewControllerAnimated:NO];
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), ^{
+        if (!TOWXIndexPathIsValid(table, path)) {
+            TOWXLog("TOWX|WX|P2A4|OPEN-MISS|index=%lu|reason=path-invalid|section=%ld|row=%ld",
+                    (unsigned long)index, (long)path.section, (long)path.row);
+            return;
+        }
+
+        [table selectRowAtIndexPath:path animated:NO scrollPosition:UITableViewScrollPositionNone];
+        id<UITableViewDelegate> delegate = table.delegate;
+        if (delegate != nil && [delegate respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
+            [delegate tableView:table didSelectRowAtIndexPath:path];
+            TOWXAck(index);
+            TOWXLog("TOWX|WX|P2A4|OPEN-SNAPSHOT|index=%lu|serial=%llu|section=%ld|row=%ld|delegate=%s",
+                    (unsigned long)index,
+                    (unsigned long long)gSnapshotSerial,
+                    (long)path.section,
+                    (long)path.row,
+                    object_getClassName(delegate) ?: "unknown");
+        } else {
+            TOWXLog("TOWX|WX|P2A4|OPEN-MISS|index=%lu|reason=delegate", (unsigned long)index);
+        }
+    });
+}
+
+static void TOWXOpenViaGoldenFallback(NSUInteger index) {
+    id controller = TOWXGoldenObjectAtOffset(TOWX_GOLDEN_CONTROLLER_OFFSET);
+    SEL action = NSSelectorFromString(@"towxAvatarTapped:");
+    if (controller == nil || ![controller respondsToSelector:action]) {
+        TOWXLog("TOWX|WX|P2A4|FALLBACK-MISS|index=%lu", (unsigned long)index);
+        return;
+    }
+    UIButton *sender = [UIButton buttonWithType:UIButtonTypeCustom];
+    sender.tag = (NSInteger)(100U + index);
+    ((void (*)(id, SEL, id))objc_msgSend)(controller, action, sender);
+    TOWXAck(index);
+    TOWXLog("TOWX|WX|P2A4|OPEN-FALLBACK|index=%lu|method=towxAvatarTapped:", (unsigned long)index);
+}
+
 static void TOWXOpenRecent(NSUInteger index) {
     @autoreleasepool {
-        if (gGoldenBase == 0) gGoldenBase = TOWXFindGoldenBase();
-        if (gGoldenBase == 0) {
-            TOWXLog("TOWX|WX|LINK|OPEN-MISS|index=%lu|reason=golden", (unsigned long)index);
-            return;
+        if (index >= TOWX_MAX_RECENTS) return;
+        if (gSnapshotTable != nil && index < gSnapshotCount && gSnapshotPaths[index] != nil) {
+            TOWXOpenSnapshotAtIndex(index);
+        } else {
+            TOWXOpenViaGoldenFallback(index);
         }
-
-        uint64_t count = TOWXGoldenCount();
-        id controller = TOWXGoldenObjectAtOffset(TOWX_GOLDEN_CONTROLLER_OFFSET);
-        if (controller == nil || index >= count || index >= TOWX_MAX_RECENTS) {
-            TOWXLog("TOWX|WX|LINK|OPEN-MISS|index=%lu|count=%llu|controller=%s",
-                    (unsigned long)index,
-                    (unsigned long long)count,
-                    controller ? "yes" : "no");
-            return;
-        }
-
-        SEL action = NSSelectorFromString(@"towxAvatarTapped:");
-        if (![controller respondsToSelector:action]) {
-            TOWXLog("TOWX|WX|LINK|OPEN-MISS|index=%lu|reason=selector", (unsigned long)index);
-            return;
-        }
-
-        UIButton *sender = [UIButton buttonWithType:UIButtonTypeCustom];
-        sender.tag = (NSInteger)(100U + index);
-        ((void (*)(id, SEL, id))objc_msgSend)(controller, action, sender);
-        (void)TOWXSetToken(gAckIndexToken, (uint64_t)index);
-        notify_post(TOWX_LINK_ACK);
-        TOWXLog("TOWX|WX|LINK|OPEN-INVOKE|index=%lu|count=%llu|method=towxAvatarTapped:",
-                (unsigned long)index, (unsigned long long)count);
     }
 }
 
 static void TOWXTick(void) {
     @autoreleasepool {
         gTick += 1;
-        int heartbeat = (gTick % 5U) == 0U;
+        BOOL heartbeat = (gTick % 16U) == 0U;
 
         if (gGoldenBase == 0) {
             gGoldenBase = TOWXFindGoldenBase();
             if (gGoldenBase == 0) {
-                TOWXPublish(310, 0, heartbeat);
+                TOWXPublish(410, gSnapshotCount, heartbeat);
                 return;
             }
-            TOWXPublish(320, 0, 1);
+            TOWXPublish(420, gSnapshotCount, YES);
         }
 
-        id table = TOWXGoldenObjectAtOffset(TOWX_GOLDEN_TABLE_OFFSET);
         UIView *bar = (UIView *)TOWXGoldenObjectAtOffset(TOWX_GOLDEN_BAR_OFFSET);
-        uint64_t count64 = TOWXGoldenCount();
-        if (count64 > TOWX_MAX_RECENTS) {
-            TOWXLog("TOWX|WX|LINK|CACHE-BAD|count=%llu", (unsigned long long)count64);
-            TOWXPublish(390, count64, heartbeat);
+        if (bar != nil) TOWXSuppressGoldenInAppBar(bar);
+
+        if (!TOWXMainMessagesListVisible()) {
+            if (gSnapshotCount > 0) {
+                TOWXPublish(470, gSnapshotCount, heartbeat);
+            } else {
+                TOWXPublish(430, 0, heartbeat);
+            }
             return;
         }
 
-        if (table == nil || bar == nil || count64 == 0) {
-            TOWXPublish(330, count64, heartbeat);
+        if ((gTick % 4U) != 0U && gSnapshotCount > 0) return;
+
+        NSUInteger captured = TOWXCaptureGoldenSnapshot();
+        if (captured == 0 || bar == nil) {
+            TOWXPublish(430, gSnapshotCount, heartbeat);
             return;
         }
 
         BOOL changed = NO;
-        NSUInteger exported = TOWXExportAvatars(bar, (NSUInteger)count64, &changed);
+        NSUInteger exported = TOWXExportAvatars(bar, captured, &changed);
+        TOWXSuppressGoldenInAppBar(bar);
         if (exported == 0) {
-            TOWXPublish(340, count64, heartbeat);
+            TOWXPublish(440, gSnapshotCount, heartbeat);
             return;
         }
 
-        TOWXLog("TOWX|WX|LINK|EXPORT-PASS|count=%llu|exported=%lu|changed=%s",
-                (unsigned long long)count64,
+        TOWXLog("TOWX|WX|P2A4|SNAPSHOT-READY|serial=%llu|count=%lu|exported=%lu|changed=%s",
+                (unsigned long long)gSnapshotSerial,
+                (unsigned long)gSnapshotCount,
                 (unsigned long)exported,
                 changed ? "yes" : "no");
-        TOWXPublish(350, count64, changed || heartbeat);
+        TOWXPublish(450, gSnapshotCount, changed || heartbeat);
     }
 }
 
 static void TOWXStart(void) {
-    TOWXLog("TOWX|WX|LINK|ADAPTER-START|v0.3.0|golden=0.6.0-clean1|offsets=controller:0x4040,bar:0x4050,table:0x4070,count:0x4078");
+    TOWXLog("TOWX|WX|P2A4|ADAPTER-START|v0.4.0|golden=0.6.0-clean1|offsets=controller:0x4040,bar:0x4050,table:0x4070,count:0x4078,paths:0x4080");
 
     if (!TOWXRegisterState(TOWX_LINK_GENERATION, &gGenerationToken) ||
         !TOWXRegisterState(TOWX_LINK_COUNT, &gCountToken) ||
         !TOWXRegisterState(TOWX_LINK_STAGE, &gStageToken) ||
         !TOWXRegisterState(TOWX_LINK_ACK_INDEX, &gAckIndexToken)) {
-        TOWXLog("TOWX|WX|LINK|INIT-ABORT|state-registration");
+        TOWXLog("TOWX|WX|P2A4|INIT-ABORT|state-registration");
         return;
     }
 
@@ -320,20 +524,20 @@ static void TOWXStart(void) {
             TOWXOpenRecent(index);
         });
         if (status != NOTIFY_STATUS_OK) {
-            TOWXLog("TOWX|WX|LINK|OPEN-LISTENER-FAIL|index=%lu|status=%u",
+            TOWXLog("TOWX|WX|P2A4|OPEN-LISTENER-FAIL|index=%lu|status=%u",
                     (unsigned long)index, status);
         }
     }
 
     gTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
     if (gTimer == nil) {
-        TOWXLog("TOWX|WX|LINK|INIT-ABORT|timer");
+        TOWXLog("TOWX|WX|P2A4|INIT-ABORT|timer");
         return;
     }
     dispatch_source_set_timer(gTimer,
                               dispatch_time(DISPATCH_TIME_NOW, 0),
-                              (uint64_t)NSEC_PER_SEC,
-                              (uint64_t)(NSEC_PER_SEC / 10));
+                              (uint64_t)(NSEC_PER_SEC / 4),
+                              (uint64_t)(NSEC_PER_SEC / 40));
     dispatch_source_set_event_handler(gTimer, ^{
         TOWXTick();
     });
@@ -342,7 +546,7 @@ static void TOWXStart(void) {
 
 __attribute__((constructor)) static void TOWXGoldenAdapterInit(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(100 * NSEC_PER_MSEC)),
                        dispatch_get_main_queue(), ^{
             TOWXStart();
         });
