@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.sbdatabridge
-Name: TOWX SpringBoard Avatar Link P2A3
-Version: 0.3.0-p2a3
+Name: TOWX SpringBoard Product Link P2A4
+Version: 0.4.0-p2a4
 Architecture: iphoneos-arm64e
-Description: SpringBoard-side linker that replaces TrollOpen A/B/C/D/E placeholders with avatars exported by the verified WeChat 0.6 plugin and forwards taps back to its verified click handler.
+Description: SpringBoard-side product linker for TrollOpen WeChat recents: position-based slots, glass background, placeholder cleanup, selected-state feedback, and lifecycle restoration across repeated mini-window sessions.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
