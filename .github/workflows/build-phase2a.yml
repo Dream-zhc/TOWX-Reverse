@@ -1,4 +1,4 @@
-name: Build TOWX Phase 2A.3 — Real Avatar Link
+name: Build TOWX Phase 2A.4 — Product External Avatar Bar
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify P2A3 repository layout and golden inputs
+      - name: Verify P2A4 repository layout and golden inputs
         run: |
           set -euo pipefail
           test -f WeChatGoldenAdapter/Makefile
@@ -69,7 +69,7 @@ jobs:
           echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
           echo "THEOS_SDK=$THEOS_SDK" >> "$GITHUB_ENV"
 
-      - name: Build WeChat golden link adapter
+      - name: Build WeChat P2A4 product adapter
         working-directory: WeChatGoldenAdapter
         run: |
           set -euo pipefail
@@ -81,7 +81,7 @@ jobs:
           test -n "$DEB"
           dpkg-deb -x "$DEB" ../verify-adapter
 
-      - name: Build SpringBoard avatar linker
+      - name: Build SpringBoard P2A4 product linker
         working-directory: SpringBoardDataBridge
         run: |
           set -euo pipefail
@@ -93,7 +93,7 @@ jobs:
           mkdir -p ../verify-sb
           dpkg-deb -x "$DEB" ../verify-sb
 
-      - name: Verify linkage binaries and filters
+      - name: Verify P2A4 product binaries and filters
         run: |
           set -euo pipefail
           ADAPTER="$(find verify-adapter -name 'TOWXGoldenAdapter.dylib' -type f -print -quit)"
@@ -105,21 +105,36 @@ jobs:
           SB_ARCHS="$(lipo -archs "$SB")"
           echo "$SB_ARCHS" | grep -qw arm64
           echo "$SB_ARCHS" | grep -qw arm64e
-          strings "$ADAPTER" | grep -Fq 'TOWX|WX|LINK|ADAPTER-START|v0.3.0'
-          strings "$ADAPTER" | grep -Fq 'TOWX|WX|LINK|AVATAR-EXPORT'
-          strings "$ADAPTER" | grep -Fq 'TOWX|WX|LINK|OPEN-INVOKE'
-          strings "$ADAPTER" | grep -Fq 'controller:0x4040,bar:0x4050,table:0x4070,count:0x4078'
+
+          strings "$ADAPTER" | grep -Fq 'TOWX|WX|P2A4|ADAPTER-START|v0.4.0'
+          strings "$ADAPTER" | grep -Fq 'TOWX|WX|P2A4|INAPP-BAR-SUPPRESS'
+          strings "$ADAPTER" | grep -Fq 'TOWX|WX|P2A4|SNAPSHOT-CAPTURE'
+          strings "$ADAPTER" | grep -Fq 'TOWX|WX|P2A4|OPEN-SNAPSHOT'
+          strings "$ADAPTER" | grep -Fq 'paths:0x4080'
           if strings "$ADAPTER" | grep -Fq 'visibleCells'; then
-            echo 'ERROR: P2A3 adapter must not rescan WeChat conversation UI' >&2
+            echo 'ERROR: P2A4 adapter must not rescan WeChat conversation cells' >&2
             exit 1
           fi
-          strings "$SB" | grep -Fq 'TOWX|SB|LINK|BAR-BIND'
-          strings "$SB" | grep -Fq 'TOWX|SB|LINK|TAP-SEND'
-          strings "$SB" | grep -Fq 'TOWX|SB|LINK|OPEN-ACK'
+
+          strings "$SB" | grep -Fq 'TOWX|SB|P2A4|BAR-BIND'
+          strings "$SB" | grep -Fq 'TOWX|SB|P2A4|BAR-STYLE'
+          strings "$SB" | grep -Fq 'TOWX|SB|P2A4|BAR-RESTORE'
+          strings "$SB" | grep -Fq 'TOWX|SB|P2A4|TAP-SEND'
+          strings "$SB" | grep -Fq 'TOWX|SB|P2A4|OPEN-ACK'
+          strings "$SB" | grep -Fq 'person.crop.circle.fill'
+
           plutil -p "$ADAPTER_PLIST" | grep -Fq 'com.tencent.xin'
           plutil -p "$SB_PLIST" | grep -Fq 'com.apple.springboard'
+          if plutil -p "$ADAPTER_PLIST" | grep -Fq 'com.apple.UIKit'; then
+            echo 'Unsafe broad UIKit filter detected in WeChat adapter' >&2
+            exit 1
+          fi
+          if plutil -p "$SB_PLIST" | grep -Fq 'com.apple.UIKit'; then
+            echo 'Unsafe broad UIKit filter detected in SpringBoard linker' >&2
+            exit 1
+          fi
 
-      - name: Repack exact golden WeChat 0.6 with link adapter
+      - name: Repack exact golden WeChat 0.6 with P2A4 adapter
         run: |
           set -euo pipefail
           GOLDEN=/tmp/TOWX-WeChatStandalone-0.6.0-clean1.deb
@@ -137,7 +152,7 @@ jobs:
           cp "$ADAPTER" "$DEST/TOWXGoldenAdapter.dylib"
           cp "$ADAPTER_PLIST" "$DEST/TOWXGoldenAdapter.plist"
 
-          perl -0pi -e 's/^Package:.*$/Package: com.dream.towxreverse.wechatbackend/m; s/^Name:.*$/Name: TOWX WeChat Golden 0.6 + Real Link/m; s/^Version:.*$/Version: 0.6.0-clean1+TOWX.P2A3/m; s/^Description:.*$/Description: Exact verified WeChat 0.6 plugin plus P2A3 avatar export and external-click adapter./m' "$STAGE/DEBIAN/control"
+          perl -0pi -e 's/^Package:.*$/Package: com.dream.towxreverse.wechatbackend/m; s/^Name:.*$/Name: TOWX WeChat Golden 0.6 + P2A4 Product/m; s/^Version:.*$/Version: 0.6.0-clean1+TOWX.P2A4/m; s/^Description:.*$/Description: Exact verified WeChat 0.6 scanner plus P2A4 root-only snapshot, hidden diagnostic strip, and external chat switching adapter./m' "$STAGE/DEBIAN/control"
           if grep -q '^Conflicts:' "$STAGE/DEBIAN/control"; then
             perl -0pi -e 's/^Conflicts:.*$/Conflicts: com.dream.towxwechatstandalone, com.dream.trollopenwxbridge/m' "$STAGE/DEBIAN/control"
           else
@@ -149,16 +164,16 @@ jobs:
             printf 'Replaces: com.dream.towxwechatstandalone, com.dream.trollopenwxbridge\n' >> "$STAGE/DEBIAN/control"
           fi
 
-          dpkg-deb -b "$STAGE" out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A3-RealLink.deb
+          dpkg-deb -b "$STAGE" out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A4-Product.deb
 
           rm -rf verify-wx-final
           mkdir verify-wx-final
-          dpkg-deb -x out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A3-RealLink.deb verify-wx-final
+          dpkg-deb -x out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A4-Product.deb verify-wx-final
           FINAL_GOLDEN=verify-wx-final/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXWeChatStandalone.dylib
           echo "$GOLDEN_WECHAT_DYLIB_SHA256  $FINAL_GOLDEN" | shasum -a 256 -c -
           test -f verify-wx-final/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXGoldenAdapter.dylib
 
-      - name: Repack golden TrollOpen with P2A3 avatar linker
+      - name: Repack golden TrollOpen with P2A4 product linker
         run: |
           set -euo pipefail
           BASE=reference/TrollOpen-1.3.7-wxbar1-test.deb
@@ -177,44 +192,46 @@ jobs:
           cp "$SB" "$DEST/TOWXSpringBoardDataBridge.dylib"
           cp "$SB_PLIST" "$DEST/TOWXSpringBoardDataBridge.plist"
 
-          perl -0pi -e 's/^Version:.*$/Version: 1.3.7-wxbar1+TOWX.P2A3/m' "$STAGE/DEBIAN/control"
-          dpkg-deb -b "$STAGE" out/TrollOpen-1.3.7-wxbar1-TOWX-P2A3-RealLink.deb
+          perl -0pi -e 's/^Version:.*$/Version: 1.3.7-wxbar1+TOWX.P2A4/m' "$STAGE/DEBIAN/control"
+          dpkg-deb -b "$STAGE" out/TrollOpen-1.3.7-wxbar1-TOWX-P2A4-Product.deb
 
           rm -rf verify-troll
           mkdir verify-troll
-          dpkg-deb -x out/TrollOpen-1.3.7-wxbar1-TOWX-P2A3-RealLink.deb verify-troll
+          dpkg-deb -x out/TrollOpen-1.3.7-wxbar1-TOWX-P2A4-Product.deb verify-troll
           NEW_CORE=verify-troll/var/jb/Library/MobileSubstrate/DynamicLibraries/TrollOpenJB.dylib
           echo "$GOLDEN_TROLLOPEN_CORE_SHA256  $NEW_CORE" | shasum -a 256 -c -
           test -f verify-troll/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.dylib
 
-      - name: Produce exactly two P2A3 test DEBs
+      - name: Produce exactly two P2A4 test DEBs
         run: |
           set -euo pipefail
-          test -f out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A3-RealLink.deb
-          test -f out/TrollOpen-1.3.7-wxbar1-TOWX-P2A3-RealLink.deb
+          test -f out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A4-Product.deb
+          test -f out/TrollOpen-1.3.7-wxbar1-TOWX-P2A4-Product.deb
           COUNT="$(find out -maxdepth 1 -type f -name '*.deb' | wc -l | tr -d ' ')"
           test "$COUNT" = "2"
           shasum -a 256 out/*.deb > out/SHA256SUMS.txt
           {
-            echo 'Phase 2A.3 Real Link'
-            echo 'WeChat scanner/click implementation remains the exact verified 0.6.0-clean1 binary.'
-            echo 'WeChat adapter exports images already shown by golden 0.6 into its own Caches/TOWXLinkP2A3 directory.'
-            echo 'SpringBoard resolves the WeChat data container, loads those files, and replaces TrollOpen A/B/C/D/E labels.'
-            echo 'External avatar taps are Darwin events only; WeChat calls golden 0.6 towxAvatarTapped: with the requested index.'
-            echo 'SpringBoard log: /var/mobile/TrollOpenJB/phase2a3-link.log'
-            echo 'WeChat log: TOWX-Link-WeChat.log in WeChat Caches.'
-            echo 'Expected: AVATAR-LOAD-PASS -> BAR-BIND -> TAP-SEND -> OPEN-ACK.'
+            echo 'Phase 2A.4 Product External Avatar Bar'
+            echo 'Product rule: WeChat itself shows no recent-avatar strip. The golden 0.6 diagnostic strip is continuously suppressed by the adapter.'
+            echo 'Recent contacts are snapshotted only while the WeChat Messages root tab is visibly selected; chat-page avatar noise cannot overwrite the external bar.'
+            echo 'External slots are assigned left-to-right, independent of TrollOpen placeholder letters, fixing G/H/I and reused-scene counters.'
+            echo 'External tap while already inside a chat pops the selected navigation stack to root without animation, then opens the snapshotted target via the verified table delegate path.'
+            echo 'Missing avatar files use a neutral SF Symbols person placeholder; raw A/B/C/... letters are never shown by the linker.'
+            echo 'External panel receives a light system-material blur and lifecycle restore/reattach logic.'
+            echo 'SpringBoard log: /var/mobile/TrollOpenJB/phase2a4-product.log'
+            echo 'WeChat log: TOWX-Link-WeChat-P2A4.log in WeChat Caches.'
+            echo 'Expected click chain: SNAPSHOT-CAPTURE -> BAR-BIND -> TAP-SEND -> NAV-RESET (if in chat) -> OPEN-SNAPSHOT -> OPEN-ACK.'
           } > out/TEST-NOTES.txt
           ls -lh out/*.deb
           cat out/SHA256SUMS.txt
 
-      - name: Upload P2A3 packages
+      - name: Upload P2A4 packages
         uses: actions/upload-artifact@v4
         with:
-          name: TOWX-Reverse-Phase2A3-RealLink
+          name: TOWX-Reverse-Phase2A4-Product
           path: |
-            out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A3-RealLink.deb
-            out/TrollOpen-1.3.7-wxbar1-TOWX-P2A3-RealLink.deb
+            out/TOWX-WeChatGolden-8.0.69-0.6.0-P2A4-Product.deb
+            out/TrollOpen-1.3.7-wxbar1-TOWX-P2A4-Product.deb
             out/SHA256SUMS.txt
             out/TEST-NOTES.txt
           if-no-files-found: error
