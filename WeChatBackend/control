@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.wechatbackend
-Name: TOWX WeChat Backend P2A
-Version: 0.2.0-p2a
+Name: TOWX WeChat Backend P2A.1 Count Probe
+Version: 0.2.1-p2a1
 Architecture: iphoneos-arm64
-Description: WeChat recent-contact backend for TOWX Phase 2A. No in-app UI.
+Description: Diagnostic WeChat recent-count backend for TOWX Phase 2A.1. No image payload transport and no in-app UI.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
