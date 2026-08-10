@@ -5,47 +5,72 @@
 #import <stdint.h>
 #import <stdio.h>
 
-#define TOWX_P2A_READY "com.dream.towx.p2a.ready"
-#define TOWX_P2A_GENERATION "com.dream.towx.p2a.generation"
-#define TOWX_P2A_COUNT "com.dream.towx.p2a.count"
-#define TOWX_P2A_AVATAR0_LENGTH "com.dream.towx.p2a.avatar0.length"
-#define TOWX_P2A_AVATAR0_HASH "com.dream.towx.p2a.avatar0.hash"
-#define TOWX_P2A_CHUNK_PREFIX "com.dream.towx.p2a.avatar0.chunk."
-#define TOWX_P2A_MAX_BYTES 4096U
-#define TOWX_OPEN_RECENT_PREFIX "com.dream.towx.openRecent."
+#define TOWX_P2A1_READY "com.dream.towx.p2a1.ready"
+#define TOWX_P2A1_GENERATION "com.dream.towx.p2a1.generation"
+#define TOWX_P2A1_COUNT "com.dream.towx.p2a1.count"
+#define TOWX_P2A1_STAGE "com.dream.towx.p2a1.stage"
 
-static uint64_t TOWXFNV1a64(const uint8_t *bytes, NSUInteger length) {
-    uint64_t value = UINT64_C(1469598103934665603);
-    for (NSUInteger i = 0; i < length; i++) {
-        value ^= (uint64_t)bytes[i];
-        value *= UINT64_C(1099511628211);
+// Diagnostic stage codes consumed by SpringBoardDataBridge.
+enum {
+    TOWXStageStart = 100,
+    TOWXStageTabMiss = 110,
+    TOWXStageTableMiss = 120,
+    TOWXStageCount = 130,
+    TOWXStageException = 190,
+};
+
+static dispatch_queue_t gTOWXLogQueue;
+static NSString *gTOWXLogPath;
+
+static void TOWXLog(NSString *format, ...) NS_FORMAT_FUNCTION(1,2);
+static void TOWXLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *body = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    NSLog(@"%@", body);
+
+    if (gTOWXLogQueue == nil || gTOWXLogPath.length == 0) {
+        return;
     }
-    return value;
+    NSString *line = [NSString stringWithFormat:@"%.3f %@\n", NSDate.date.timeIntervalSince1970, body];
+    NSString *path = gTOWXLogPath;
+    dispatch_async(gTOWXLogQueue, ^{
+        NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+        if (data.length == 0) return;
+        NSFileManager *fm = NSFileManager.defaultManager;
+        if (![fm fileExistsAtPath:path]) {
+            [data writeToFile:path atomically:YES];
+            return;
+        }
+        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+        if (handle == nil) return;
+        @try {
+            [handle seekToEndOfFile];
+            [handle writeData:data];
+            [handle closeFile];
+        } @catch (__unused NSException *exception) {
+        }
+    });
 }
 
-static BOOL TOWXSetState(const char *name, uint64_t value) {
-    int token = 0;
-    uint32_t status = notify_register_check(name, &token);
-    if (status != NOTIFY_STATUS_OK) {
-        return NO;
-    }
-    status = notify_set_state(token, value);
-    (void)notify_cancel(token);
-    return status == NOTIFY_STATUS_OK;
+static void TOWXSetupLogging(void) {
+    if (gTOWXLogQueue != nil) return;
+    gTOWXLogQueue = dispatch_queue_create("com.dream.towx.p2a1.wechat.log", DISPATCH_QUEUE_SERIAL);
+    NSArray<NSString *> *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+    NSString *dir = caches.firstObject ?: NSTemporaryDirectory();
+    gTOWXLogPath = [dir stringByAppendingPathComponent:@"TOWX-P2A1-WeChat.log"];
 }
 
 static NSArray<UIWindow *> *TOWXWindows(void) {
     UIApplication *application = UIApplication.sharedApplication;
-    NSArray<UIWindow *> *windows = application.windows;
-    if (windows.count > 0) {
-        return windows;
-    }
     NSMutableArray<UIWindow *> *result = [NSMutableArray array];
     for (UIScene *scene in application.connectedScenes) {
-        if (![scene isKindOfClass:UIWindowScene.class]) {
-            continue;
-        }
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
         [result addObjectsFromArray:((UIWindowScene *)scene).windows];
+    }
+    if (result.count == 0) {
+        [result addObjectsFromArray:application.windows];
     }
     return result;
 }
@@ -55,12 +80,21 @@ static UITabBar *TOWXFindTabBarInView(UIView *view) {
         return (UITabBar *)view;
     }
     for (UIView *subview in view.subviews) {
-        UITabBar *tabBar = TOWXFindTabBarInView(subview);
-        if (tabBar != nil) {
-            return tabBar;
-        }
+        UITabBar *found = TOWXFindTabBarInView(subview);
+        if (found != nil) return found;
     }
     return nil;
+}
+
+static BOOL TOWXIsMessagesTabVisible(void) {
+    for (UIWindow *window in TOWXWindows()) {
+        if (window.hidden || window.alpha <= 0.01) continue;
+        UITabBar *tabBar = TOWXFindTabBarInView(window);
+        if (tabBar == nil || tabBar.items.count == 0 || tabBar.selectedItem == nil) continue;
+        NSUInteger selectedIndex = [tabBar.items indexOfObject:tabBar.selectedItem];
+        if (selectedIndex == 0) return YES;
+    }
+    return NO;
 }
 
 static void TOWXCollectTables(UIView *view, NSMutableArray<UITableView *> *tables) {
@@ -72,255 +106,154 @@ static void TOWXCollectTables(UIView *view, NSMutableArray<UITableView *> *table
     }
 }
 
-static UIImageView *TOWXBestAvatarView(UIView *view, UIImageView *best, CGFloat *bestScore) {
+static BOOL TOWXViewContainsAvatarCandidate(UIView *view) {
     if ([view isKindOfClass:UIImageView.class]) {
         UIImageView *imageView = (UIImageView *)view;
         CGFloat width = CGRectGetWidth(imageView.bounds);
         CGFloat height = CGRectGetHeight(imageView.bounds);
         if (imageView.image != nil && !imageView.hidden && imageView.alpha > 0.05 &&
-            width >= 30.0 && width <= 80.0 && height >= 30.0 && height <= 80.0) {
-            CGFloat squarePenalty = fabs(width - height);
-            CGFloat sizePenalty = fabs(MAX(width, height) - 48.0);
-            CGFloat score = 1000.0 - squarePenalty * 8.0 - sizePenalty;
-            if (score > *bestScore) {
-                best = imageView;
-                *bestScore = score;
-            }
+            width >= 30.0 && width <= 80.0 && height >= 30.0 && height <= 80.0 &&
+            fabs(width - height) <= 12.0) {
+            return YES;
         }
     }
     for (UIView *subview in view.subviews) {
-        best = TOWXBestAvatarView(subview, best, bestScore);
+        if (TOWXViewContainsAvatarCandidate(subview)) return YES;
     }
-    return best;
+    return NO;
 }
 
-static UITabBar *TOWXVisibleMainTabBar(void) {
-    for (UIWindow *window in TOWXWindows()) {
-        if (window.hidden || window.alpha <= 0.01) {
-            continue;
-        }
-        UITabBar *tabBar = TOWXFindTabBarInView(window);
-        if (tabBar == nil || tabBar.items.count == 0 || tabBar.selectedItem == nil) {
-            continue;
-        }
-        NSUInteger selectedIndex = [tabBar.items indexOfObject:tabBar.selectedItem];
-        if (selectedIndex == 0) {
-            return tabBar;
-        }
-    }
-    return nil;
-}
-
-static NSArray<NSDictionary *> *TOWXRowsForTable(UITableView *table) {
-    NSMutableArray<NSDictionary *> *rows = [NSMutableArray array];
+static NSUInteger TOWXCandidateRowCount(UITableView *table) {
+    NSUInteger count = 0;
     for (UITableViewCell *cell in table.visibleCells) {
-        NSIndexPath *indexPath = [table indexPathForCell:cell];
-        if (indexPath == nil) {
-            continue;
-        }
-        CGFloat bestScore = -CGFLOAT_MAX;
-        UIImageView *avatarView = TOWXBestAvatarView(cell.contentView, nil, &bestScore);
-        if (avatarView.image == nil) {
-            continue;
-        }
-        [rows addObject:@{ @"indexPath": indexPath, @"image": avatarView.image }];
+        if (TOWXViewContainsAvatarCandidate(cell.contentView)) count++;
     }
-    [rows sortUsingComparator:^NSComparisonResult(NSDictionary *lhs, NSDictionary *rhs) {
-        NSIndexPath *a = lhs[@"indexPath"];
-        NSIndexPath *b = rhs[@"indexPath"];
-        if (a.section != b.section) {
-            return a.section < b.section ? NSOrderedAscending : NSOrderedDescending;
-        }
-        if (a.row != b.row) {
-            return a.row < b.row ? NSOrderedAscending : NSOrderedDescending;
-        }
-        return NSOrderedSame;
-    }];
-    return rows;
+    return count;
 }
 
-static UITableView *TOWXBestRecentTable(NSArray<NSDictionary *> **outRows) {
-    UITableView *bestTable = nil;
-    NSArray<NSDictionary *> *bestRows = nil;
-    NSInteger bestScore = NSIntegerMin;
-
+static NSUInteger TOWXBestRecentVisibleCount(void) {
+    NSUInteger bestCount = 0;
     for (UIWindow *window in TOWXWindows()) {
-        if (window.hidden || window.alpha <= 0.01) {
-            continue;
-        }
+        if (window.hidden || window.alpha <= 0.01) continue;
         NSMutableArray<UITableView *> *tables = [NSMutableArray array];
         TOWXCollectTables(window, tables);
         for (UITableView *table in tables) {
-            if (CGRectGetHeight(table.bounds) < 180.0 || CGRectGetWidth(table.bounds) < 250.0) {
-                continue;
-            }
-            NSArray<NSDictionary *> *rows = TOWXRowsForTable(table);
-            if (rows.count == 0) {
-                continue;
-            }
-            NSInteger score = (NSInteger)rows.count * 1000 + (NSInteger)CGRectGetHeight(table.bounds);
-            if (score > bestScore) {
-                bestScore = score;
-                bestTable = table;
-                bestRows = rows;
-            }
+            if (CGRectGetHeight(table.bounds) < 180.0 || CGRectGetWidth(table.bounds) < 250.0) continue;
+            NSUInteger count = TOWXCandidateRowCount(table);
+            if (count > bestCount) bestCount = count;
         }
     }
-
-    if (outRows != NULL) {
-        *outRows = bestRows;
-    }
-    return bestTable;
-}
-
-static NSData *TOWXJPEGData(UIImage *image, CGSize size, CGFloat quality) {
-    UIGraphicsBeginImageContextWithOptions(size, YES, 1.0);
-    [image drawInRect:(CGRect){ .origin = CGPointZero, .size = size }];
-    UIImage *scaled = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    if (scaled == nil) {
-        return nil;
-    }
-    return UIImageJPEGRepresentation(scaled, quality);
+    return MIN((NSUInteger)6, bestCount);
 }
 
 @interface TOWXRuntimeController : NSObject
 @property (nonatomic, strong) NSTimer *timer;
-@property (nonatomic, weak) UITableView *recentTable;
-@property (nonatomic, copy) NSArray<NSIndexPath *> *recentIndexPaths;
+@property (nonatomic) int generationToken;
+@property (nonatomic) int countToken;
+@property (nonatomic) int stageToken;
 @property (nonatomic) uint64_t generation;
-@property (nonatomic) uint64_t lastHash;
-@property (nonatomic) NSUInteger lastCount;
+@property (nonatomic) NSInteger lastPublishedCount;
+@property (nonatomic) NSInteger lastPublishedStage;
+@property (nonatomic) NSUInteger tickNumber;
 @end
 
 @implementation TOWXRuntimeController
 
 + (instancetype)sharedController {
-    static TOWXRuntimeController *controller = nil;
+    static TOWXRuntimeController *controller;
     static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        controller = [TOWXRuntimeController new];
-    });
+    dispatch_once(&onceToken, ^{ controller = [TOWXRuntimeController new]; });
     return controller;
 }
 
-- (void)start {
-    if (self.timer != nil) {
+- (BOOL)registerStateName:(const char *)name token:(int *)token {
+    uint32_t status = notify_register_check(name, token);
+    if (status != NOTIFY_STATUS_OK) {
+        TOWXLog(@"TOWX|WX|P2A1|STATE-REGISTER-FAIL|name=%s|status=%u", name, status);
+        return NO;
+    }
+    return YES;
+}
+
+- (void)publishStage:(uint64_t)stage count:(uint64_t)count force:(BOOL)force {
+    if (!force && self.lastPublishedStage == (NSInteger)stage && self.lastPublishedCount == (NSInteger)count) return;
+    self.generation += 1;
+    uint32_t s1 = notify_set_state(self.stageToken, stage);
+    uint32_t s2 = notify_set_state(self.countToken, count);
+    uint32_t s3 = notify_set_state(self.generationToken, self.generation);
+    if (s1 != NOTIFY_STATUS_OK || s2 != NOTIFY_STATUS_OK || s3 != NOTIFY_STATUS_OK) {
+        TOWXLog(@"TOWX|WX|P2A1|STATE-WRITE-FAIL|stage=%llu|count=%llu|statuses=%u,%u,%u",
+                (unsigned long long)stage, (unsigned long long)count, s1, s2, s3);
         return;
     }
-    for (NSUInteger index = 0; index < 6; index++) {
-        char name[96];
-        (void)snprintf(name, sizeof(name), "%s%lu", TOWX_OPEN_RECENT_PREFIX, (unsigned long)index);
-        int token = 0;
-        NSString *notificationName = [NSString stringWithUTF8String:name];
-        uint32_t status = notify_register_dispatch(notificationName.UTF8String, &token, dispatch_get_main_queue(), ^(int incomingToken) {
-            (void)incomingToken;
-            [self openRecentAtIndex:index];
-        });
-        if (status != NOTIFY_STATUS_OK) {
-            NSLog(@"TOWX|WX|P2A|OPEN-LISTENER-FAIL|index=%lu|status=%u", (unsigned long)index, status);
-        }
+    self.lastPublishedStage = (NSInteger)stage;
+    self.lastPublishedCount = (NSInteger)count;
+    notify_post(TOWX_P2A1_READY);
+    TOWXLog(@"TOWX|WX|P2A1|PUBLISH|generation=%llu|stage=%llu|count=%llu",
+            (unsigned long long)self.generation,
+            (unsigned long long)stage,
+            (unsigned long long)count);
+}
+
+- (void)start {
+    if (self.timer != nil) return;
+    TOWXSetupLogging();
+    self.lastPublishedCount = -1;
+    self.lastPublishedStage = -1;
+    TOWXLog(@"TOWX|WX|P2A1|LOADED|v0.2.1|log=%@", gTOWXLogPath);
+
+    if (![self registerStateName:TOWX_P2A1_GENERATION token:&_generationToken] ||
+        ![self registerStateName:TOWX_P2A1_COUNT token:&_countToken] ||
+        ![self registerStateName:TOWX_P2A1_STAGE token:&_stageToken]) {
+        TOWXLog(@"TOWX|WX|P2A1|START-ABORT|state-registration");
+        return;
     }
-    self.timer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
+
+    [self publishStage:TOWXStageStart count:0 force:YES];
+    self.timer = [NSTimer scheduledTimerWithTimeInterval:2.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
     [self tick:self.timer];
 }
 
 - (void)tick:(NSTimer *)timer {
     (void)timer;
+    self.tickNumber += 1;
     @autoreleasepool {
-        if (TOWXVisibleMainTabBar() == nil) {
-            return;
-        }
-
-        NSArray<NSDictionary *> *rows = nil;
-        UITableView *table = TOWXBestRecentTable(&rows);
-        if (table == nil || rows.count == 0) {
-            return;
-        }
-
-        NSMutableArray<NSIndexPath *> *indexPaths = [NSMutableArray arrayWithCapacity:MIN((NSUInteger)6, rows.count)];
-        for (NSUInteger index = 0; index < MIN((NSUInteger)6, rows.count); index++) {
-            [indexPaths addObject:rows[index][@"indexPath"]];
-        }
-        self.recentTable = table;
-        self.recentIndexPaths = indexPaths;
-
-        UIImage *avatar0 = rows.firstObject[@"image"];
-        NSData *jpeg = TOWXJPEGData(avatar0, CGSizeMake(32.0, 32.0), 0.62);
-        if (jpeg.length == 0 || jpeg.length > TOWX_P2A_MAX_BYTES) {
-            jpeg = TOWXJPEGData(avatar0, CGSizeMake(24.0, 24.0), 0.45);
-        }
-        if (jpeg.length == 0 || jpeg.length > TOWX_P2A_MAX_BYTES) {
-            NSLog(@"TOWX|WX|P2A|AVATAR0-ENCODE-FAIL|bytes=%lu", (unsigned long)jpeg.length);
-            return;
-        }
-
-        uint64_t hash = TOWXFNV1a64(jpeg.bytes, jpeg.length);
-        NSUInteger count = indexPaths.count;
-        if (hash == self.lastHash && count == self.lastCount) {
-            return;
-        }
-
-        const uint8_t *bytes = jpeg.bytes;
-        NSUInteger chunkCount = (jpeg.length + 7U) / 8U;
-        for (NSUInteger chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
-            uint64_t state = 0;
-            for (NSUInteger byteIndex = 0; byteIndex < 8U; byteIndex++) {
-                NSUInteger inputIndex = chunkIndex * 8U + byteIndex;
-                if (inputIndex >= jpeg.length) {
-                    break;
-                }
-                state |= ((uint64_t)bytes[inputIndex]) << (byteIndex * 8U);
-            }
-            char chunkName[128];
-            (void)snprintf(chunkName, sizeof(chunkName), "%s%04lu", TOWX_P2A_CHUNK_PREFIX, (unsigned long)chunkIndex);
-            if (!TOWXSetState(chunkName, state)) {
-                NSLog(@"TOWX|WX|P2A|CHUNK-WRITE-FAIL|chunk=%lu", (unsigned long)chunkIndex);
+        @try {
+            TOWXLog(@"TOWX|WX|P2A1|TICK-BEGIN|n=%lu", (unsigned long)self.tickNumber);
+            if (!TOWXIsMessagesTabVisible()) {
+                TOWXLog(@"TOWX|WX|P2A1|TAB-MISS|n=%lu", (unsigned long)self.tickNumber);
+                [self publishStage:TOWXStageTabMiss count:0 force:NO];
                 return;
             }
-        }
 
-        self.generation += 1;
-        if (!TOWXSetState(TOWX_P2A_COUNT, count) ||
-            !TOWXSetState(TOWX_P2A_AVATAR0_LENGTH, jpeg.length) ||
-            !TOWXSetState(TOWX_P2A_AVATAR0_HASH, hash) ||
-            !TOWXSetState(TOWX_P2A_GENERATION, self.generation)) {
-            NSLog(@"TOWX|WX|P2A|META-WRITE-FAIL");
-            return;
-        }
+            NSUInteger count = TOWXBestRecentVisibleCount();
+            if (count == 0) {
+                TOWXLog(@"TOWX|WX|P2A1|TABLE-MISS|n=%lu", (unsigned long)self.tickNumber);
+                [self publishStage:TOWXStageTableMiss count:0 force:NO];
+                return;
+            }
 
-        self.lastHash = hash;
-        self.lastCount = count;
-        notify_post(TOWX_P2A_READY);
-        NSLog(@"TOWX|WX|P2A|PUSH|generation=%llu|count=%lu|bytes=%lu|hash=%016llx",
-              (unsigned long long)self.generation,
-              (unsigned long)count,
-              (unsigned long)jpeg.length,
-              (unsigned long long)hash);
+            TOWXLog(@"TOWX|WX|P2A1|SCAN-OK|n=%lu|visibleRecent=%lu",
+                    (unsigned long)self.tickNumber, (unsigned long)count);
+            [self publishStage:TOWXStageCount count:count force:NO];
+            TOWXLog(@"TOWX|WX|P2A1|TICK-END|n=%lu", (unsigned long)self.tickNumber);
+        } @catch (NSException *exception) {
+            TOWXLog(@"TOWX|WX|P2A1|EXCEPTION|name=%@|reason=%@", exception.name, exception.reason);
+            [self publishStage:TOWXStageException count:0 force:YES];
+        }
     }
 }
 
-- (void)openRecentAtIndex:(NSUInteger)index {
-    if (index >= self.recentIndexPaths.count || self.recentTable == nil) {
-        NSLog(@"TOWX|WX|P2A|OPEN-MISS|index=%lu", (unsigned long)index);
-        return;
-    }
-    NSIndexPath *indexPath = self.recentIndexPaths[index];
-    id<UITableViewDelegate> delegate = self.recentTable.delegate;
-    if ([delegate respondsToSelector:@selector(tableView:didSelectRowAtIndexPath:)]) {
-        [delegate tableView:self.recentTable didSelectRowAtIndexPath:indexPath];
-        NSLog(@"TOWX|WX|P2A|OPEN-SENT|index=%lu|section=%ld|row=%ld",
-              (unsigned long)index, (long)indexPath.section, (long)indexPath.row);
-    } else {
-        NSLog(@"TOWX|WX|P2A|OPEN-NO-DELEGATE|index=%lu", (unsigned long)index);
-    }
+- (void)dealloc {
+    if (_generationToken != 0) notify_cancel(_generationToken);
+    if (_countToken != 0) notify_cancel(_countToken);
+    if (_stageToken != 0) notify_cancel(_stageToken);
 }
 
 @end
 
 __attribute__((constructor)) static void TOWXWeChatBackendInit(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSLog(@"TOWX|WX|P2A|LOADED|v0.2.0");
-        [[TOWXRuntimeController sharedController] performSelector:@selector(start) withObject:nil afterDelay:1.5];
+        [[TOWXRuntimeController sharedController] performSelector:@selector(start) withObject:nil afterDelay:3.0];
     });
 }
