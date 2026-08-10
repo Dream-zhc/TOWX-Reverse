@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.goldenadapter
-Name: TOWX WeChat Golden Adapter P2A2
-Version: 0.2.2-p2a2
+Name: TOWX WeChat Golden Adapter P2A3 Link
+Version: 0.3.0-p2a3
 Architecture: iphoneos-arm64
-Description: Read-only adapter for verified TOWX WeChat Standalone 0.6 cache. No UI scanner.
+Description: Link adapter for verified TOWX WeChat Standalone 0.6. Exports its existing avatar cache and routes external taps back to its verified click handler. Does not rescan WeChat conversations.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
