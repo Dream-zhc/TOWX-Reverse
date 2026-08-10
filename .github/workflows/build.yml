@@ -1,0 +1,147 @@
+name: Build TOWX Reverse Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packaging tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+          echo "THEOS=$(git -C "$THEOS" rev-parse HEAD)"
+
+      - name: Bind the actual Xcode iPhoneOS SDK into Theos
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "Xcode iPhoneOS SDK version: $SDK_VERSION"
+          echo "Xcode iPhoneOS SDK path: $SDK_PATH"
+          test -d "$SDK_PATH"
+
+          mkdir -p "$THEOS/sdks"
+          THEOS_SDK="$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          rm -rf "$THEOS_SDK"
+          ln -s "$SDK_PATH" "$THEOS_SDK"
+          test -d "$THEOS_SDK"
+
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+          echo "THEOS_SDK=$THEOS_SDK" >> "$GITHUB_ENV"
+          echo "--- Theos SDK directory ---"
+          ls -la "$THEOS/sdks"
+          echo "--- Bound SDK ---"
+          ls -ld "$THEOS_SDK"
+          test -f "$THEOS_SDK/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation.tbd" || \
+            test -f "$THEOS_SDK/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+
+      - name: Build RootHide probe DEB
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          echo "TARGET=$TARGET_VALUE"
+          make clean \
+            THEOS_PACKAGE_SCHEME=roothide \
+            ARCHS="arm64 arm64e" \
+            TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 \
+            THEOS_PACKAGE_SCHEME=roothide \
+            ARCHS="arm64 arm64e" \
+            TARGET="$TARGET_VALUE"
+          ls -lah packages/
+
+      - name: Verify package and Mach-O slices
+        run: |
+          set -euo pipefail
+          DEB="$(find packages -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$DEB"
+
+          ARCH="$(dpkg-deb -f "$DEB" Architecture)"
+          VERSION="$(dpkg-deb -f "$DEB" Version)"
+          echo "Package: $DEB"
+          echo "Version: $VERSION"
+          echo "Architecture: $ARCH"
+          test "$ARCH" = "iphoneos-arm64e"
+
+          rm -rf verify-root
+          mkdir verify-root
+          dpkg-deb -x "$DEB" verify-root
+
+          SB="$(find verify-root -type f -name 'TOWXSpringBoardBridge.dylib' -print -quit)"
+          WX="$(find verify-root -type f -name 'TOWXWeChatProbe.dylib' -print -quit)"
+          SBPLIST="$(find verify-root -type f -name 'TOWXSpringBoardBridge.plist' -print -quit)"
+          WXPLIST="$(find verify-root -type f -name 'TOWXWeChatProbe.plist' -print -quit)"
+          test -n "$SB"
+          test -n "$WX"
+          test -n "$SBPLIST"
+          test -n "$WXPLIST"
+
+          echo "--- SpringBoard bridge ---"
+          file "$SB"
+          SB_ARCHS="$(lipo -archs "$SB")"
+          echo "$SB_ARCHS"
+          echo "$SB_ARCHS" | grep -qw arm64
+          echo "$SB_ARCHS" | grep -qw arm64e
+          strings "$SB" | grep -Fq 'TOWX|SB|LOADED|v0.1.0'
+          strings "$SB" | grep -Fq 'TOWX|SB|PONG-RECV|PASS'
+          otool -L "$SB"
+
+          echo "--- WeChat probe ---"
+          file "$WX"
+          WX_ARCHS="$(lipo -archs "$WX")"
+          echo "$WX_ARCHS"
+          echo "$WX_ARCHS" | grep -qw arm64
+          echo "$WX_ARCHS" | grep -qw arm64e
+          otool -L "$WX"
+
+          echo "--- Injection filters ---"
+          plutil -p "$SBPLIST"
+          plutil -p "$WXPLIST"
+          plutil -p "$SBPLIST" | grep -Fq 'com.apple.springboard'
+          plutil -p "$WXPLIST" | grep -Fq 'com.tencent.xin'
+          if plutil -p "$WXPLIST" | grep -Fq 'com.apple.UIKit'; then
+            echo "Unsafe broad UIKit filter detected" >&2
+            exit 1
+          fi
+
+          cp "$DEB" packages/TOWX-Reverse-Bridge-Probe-v0.1.0-RootHide.deb
+          shasum -a 256 packages/TOWX-Reverse-Bridge-Probe-v0.1.0-RootHide.deb > packages/SHA256SUMS.txt
+
+          {
+            echo "version=$VERSION"
+            echo "architecture=$ARCH"
+            echo "sdk_version=$SDK_VERSION"
+            echo "sdk_path=$THEOS_SDK"
+            echo "springboard_slices=$SB_ARCHS"
+            echo "wechat_slices=$WX_ARCHS"
+          } > packages/BUILD-VERIFICATION.txt
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-Reverse-Bridge-Probe-v0.1.0-RootHide
+          path: |
+            packages/TOWX-Reverse-Bridge-Probe-v0.1.0-RootHide.deb
+            packages/SHA256SUMS.txt
+            packages/BUILD-VERIFICATION.txt
+          if-no-files-found: error
