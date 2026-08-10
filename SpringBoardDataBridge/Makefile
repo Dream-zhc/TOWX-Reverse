@@ -5,7 +5,7 @@ THEOS_PACKAGE_SCHEME = roothide
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = TOWXSpringBoardDataBridge
-TOWXSpringBoardDataBridge_FILES = TOWXSpringBoardProductV9.m
+TOWXSpringBoardDataBridge_FILES = TOWXSpringBoardProductV9_1.m
 TOWXSpringBoardDataBridge_CFLAGS = -fobjc-arc -fblocks -Wall -Wextra -Wno-deprecated-declarations -include TOWXObjCCompat.h
 TOWXSpringBoardDataBridge_FRAMEWORKS = Foundation UIKit
 
