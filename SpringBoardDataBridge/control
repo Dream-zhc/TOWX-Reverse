@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.sbdatabridge
-Name: TOWX SpringBoard DataBridge P2A
-Version: 0.2.0-p2a
+Name: TOWX SpringBoard CountBridge P2A.1
+Version: 0.2.1-p2a1
 Architecture: iphoneos-arm64e
-Description: SpringBoard-side data receiver for TOWX Phase 2A.
+Description: SpringBoard-side diagnostic count receiver for TOWX Phase 2A.1.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
