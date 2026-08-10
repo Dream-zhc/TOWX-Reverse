@@ -1,0 +1,70 @@
+name: Diagnose P2A4 WeChat Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'WeChatGoldenAdapter/**'
+      - '.github/workflows/diagnose-p2a4.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packaging tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind actual Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          THEOS_SDK="$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          rm -rf "$THEOS_SDK"
+          ln -s "$SDK_PATH" "$THEOS_SDK"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Capture WeChat adapter compiler output
+        working-directory: WeChatGoldenAdapter
+        shell: bash
+        run: |
+          set +e
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS=arm64 TARGET="$TARGET_VALUE" > ../p2a4-wechat-build.log 2>&1
+          CLEAN_STATUS=$?
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS=arm64 TARGET="$TARGET_VALUE" >> ../p2a4-wechat-build.log 2>&1
+          BUILD_STATUS=$?
+          {
+            echo "clean_status=$CLEAN_STATUS"
+            echo "build_status=$BUILD_STATUS"
+          } > ../p2a4-wechat-status.txt
+          cat ../p2a4-wechat-build.log
+          exit 0
+
+      - name: Upload diagnostic log
+        uses: actions/upload-artifact@v4
+        with:
+          name: P2A4-WeChat-Compiler-Log
+          path: |
+            p2a4-wechat-build.log
+            p2a4-wechat-status.txt
+          if-no-files-found: error
