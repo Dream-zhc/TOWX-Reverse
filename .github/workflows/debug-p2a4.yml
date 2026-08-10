@@ -1,0 +1,55 @@
+name: Debug P2A4 Adapter Compile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'WeChatGoldenAdapter/**'
+      - '.github/workflows/debug-p2a4.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install dpkg ldid
+      - name: Install RootHide Theos
+        run: |
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+      - name: Bind SDK
+        run: |
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          THEOS_SDK="$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          rm -rf "$THEOS_SDK"
+          ln -s "$SDK_PATH" "$THEOS_SDK"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+      - name: Compile and capture log
+        id: compile
+        working-directory: WeChatGoldenAdapter
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS=arm64 TARGET="$TARGET_VALUE" 2>&1 | tee ../p2a4-wechat-build.log
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS=arm64 TARGET="$TARGET_VALUE" 2>&1 | tee -a ../p2a4-wechat-build.log
+      - name: Upload compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P2A4-Compiler-Log
+          path: p2a4-wechat-build.log
+          if-no-files-found: error
+      - name: Fail if compile failed
+        if: steps.compile.outcome != 'success'
+        run: exit 1
