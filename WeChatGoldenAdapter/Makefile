@@ -5,7 +5,7 @@ THEOS_PACKAGE_SCHEME = roothide
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = TOWXGoldenAdapter
-TOWXGoldenAdapter_FILES = TOWXGoldenAdapter.m
+TOWXGoldenAdapter_FILES = TOWXGoldenAdapterV6.m
 TOWXGoldenAdapter_CFLAGS = -fobjc-arc -fblocks -Wall -Wextra -Wno-deprecated-declarations -include TOWXUIKitCompat.h
 TOWXGoldenAdapter_FRAMEWORKS = Foundation UIKit
 
