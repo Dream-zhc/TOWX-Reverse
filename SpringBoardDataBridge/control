@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.sbdatabridge
-Name: TOWX SpringBoard Golden CountBridge P2A2
-Version: 0.2.2-p2a2
+Name: TOWX SpringBoard Avatar Link P2A3
+Version: 0.3.0-p2a3
 Architecture: iphoneos-arm64e
-Description: SpringBoard receiver for the verified WeChat 0.6 golden-cache adapter.
+Description: SpringBoard-side linker that replaces TrollOpen A/B/C/D/E placeholders with avatars exported by the verified WeChat 0.6 plugin and forwards taps back to its verified click handler.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
