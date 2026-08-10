@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = TOWXSpringBoardDataBridge
 TOWXSpringBoardDataBridge_FILES = TOWXSpringBoardDataBridge.m
-TOWXSpringBoardDataBridge_CFLAGS = -fobjc-arc -fblocks -Wall -Wextra -Wno-deprecated-declarations
+TOWXSpringBoardDataBridge_CFLAGS = -fobjc-arc -fblocks -Wall -Wextra -Wno-deprecated-declarations -include TOWXObjCCompat.h
 TOWXSpringBoardDataBridge_FRAMEWORKS = Foundation UIKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
