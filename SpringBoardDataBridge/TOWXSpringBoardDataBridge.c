@@ -10,26 +10,18 @@
 #include <time.h>
 #include <unistd.h>
 
-#define TOWX_P2A_READY "com.dream.towx.p2a.ready"
-#define TOWX_P2A_GENERATION "com.dream.towx.p2a.generation"
-#define TOWX_P2A_COUNT "com.dream.towx.p2a.count"
-#define TOWX_P2A_AVATAR0_LENGTH "com.dream.towx.p2a.avatar0.length"
-#define TOWX_P2A_AVATAR0_HASH "com.dream.towx.p2a.avatar0.hash"
-#define TOWX_P2A_CHUNK_PREFIX "com.dream.towx.p2a.avatar0.chunk."
-#define TOWX_P2A_MAX_BYTES 4096U
+#define TOWX_P2A1_READY "com.dream.towx.p2a1.ready"
+#define TOWX_P2A1_GENERATION "com.dream.towx.p2a1.generation"
+#define TOWX_P2A1_COUNT "com.dream.towx.p2a1.count"
+#define TOWX_P2A1_STAGE "com.dream.towx.p2a1.stage"
 
 static const char *kLogDir = "/var/mobile/TrollOpenJB";
-static const char *kLogPath = "/var/mobile/TrollOpenJB/phase2a.log";
-static const char *kAvatarPath = "/var/mobile/TrollOpenJB/avatar0-p2a.jpg";
+static const char *kLogPath = "/var/mobile/TrollOpenJB/phase2a1.log";
 
-static uint64_t TOWXFNV1a64(const uint8_t *bytes, size_t length) {
-    uint64_t value = UINT64_C(1469598103934665603);
-    for (size_t i = 0; i < length; i++) {
-        value ^= (uint64_t)bytes[i];
-        value *= UINT64_C(1099511628211);
-    }
-    return value;
-}
+static int gReadyToken = 0;
+static int gGenerationToken = 0;
+static int gCountToken = 0;
+static int gStageToken = 0;
 
 static void TOWXEnsureLogDir(void) {
     (void)mkdir(kLogDir, 0755);
@@ -38,9 +30,7 @@ static void TOWXEnsureLogDir(void) {
 static void TOWXLog(const char *format, ...) {
     TOWXEnsureLogDir();
     int fd = open(kLogPath, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd < 0) {
-        return;
-    }
+    if (fd < 0) return;
 
     char message[768];
     va_list args;
@@ -57,130 +47,82 @@ static void TOWXLog(const char *format, ...) {
     int lineLength = snprintf(line, sizeof(line), "%lld %s\n", (long long)now, message);
     if (lineLength > 0) {
         size_t toWrite = (size_t)lineLength;
-        if (toWrite > sizeof(line)) {
-            toWrite = sizeof(line);
-        }
+        if (toWrite > sizeof(line)) toWrite = sizeof(line);
         (void)write(fd, line, toWrite);
     }
     close(fd);
 }
 
-static int TOWXReadState(const char *name, uint64_t *value) {
-    int token = 0;
-    uint32_t status = notify_register_check(name, &token);
+static const char *TOWXStageName(uint64_t stage) {
+    switch (stage) {
+        case 100: return "START";
+        case 110: return "TAB-MISS";
+        case 120: return "TABLE-MISS";
+        case 130: return "COUNT";
+        case 190: return "EXCEPTION";
+        default: return "UNKNOWN";
+    }
+}
+
+static int TOWXRegisterState(const char *name, int *token) {
+    uint32_t status = notify_register_check(name, token);
     if (status != NOTIFY_STATUS_OK) {
+        TOWXLog("TOWX|SB|P2A1|STATE-REGISTER-FAIL|name=%s|status=%u", name, status);
         return 0;
-    }
-    status = notify_get_state(token, value);
-    (void)notify_cancel(token);
-    return status == NOTIFY_STATUS_OK;
-}
-
-static int TOWXReadAvatar(uint8_t *buffer, size_t length) {
-    size_t chunkCount = (length + 7U) / 8U;
-    for (size_t chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
-        char name[128];
-        (void)snprintf(name, sizeof(name), "%s%04zu", TOWX_P2A_CHUNK_PREFIX, chunkIndex);
-        uint64_t state = 0;
-        if (!TOWXReadState(name, &state)) {
-            return 0;
-        }
-        for (size_t byteIndex = 0; byteIndex < 8U; byteIndex++) {
-            size_t outputIndex = chunkIndex * 8U + byteIndex;
-            if (outputIndex >= length) {
-                break;
-            }
-            buffer[outputIndex] = (uint8_t)((state >> (byteIndex * 8U)) & UINT64_C(0xff));
-        }
     }
     return 1;
 }
 
-static int TOWXWriteAvatar(const uint8_t *bytes, size_t length) {
-    TOWXEnsureLogDir();
-    int fd = open(kAvatarPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        return 0;
-    }
-    size_t offset = 0;
-    while (offset < length) {
-        ssize_t written = write(fd, bytes + offset, length - offset);
-        if (written <= 0) {
-            close(fd);
-            return 0;
-        }
-        offset += (size_t)written;
-    }
-    (void)fsync(fd);
-    close(fd);
-    return 1;
+static int TOWXReadToken(int token, uint64_t *value) {
+    return notify_get_state(token, value) == NOTIFY_STATUS_OK;
 }
 
 static void TOWXHandleReady(void) {
     uint64_t generation = 0;
     uint64_t count = 0;
-    uint64_t length64 = 0;
-    uint64_t expectedHash = 0;
+    uint64_t stage = 0;
 
-    if (!TOWXReadState(TOWX_P2A_GENERATION, &generation) ||
-        !TOWXReadState(TOWX_P2A_COUNT, &count) ||
-        !TOWXReadState(TOWX_P2A_AVATAR0_LENGTH, &length64) ||
-        !TOWXReadState(TOWX_P2A_AVATAR0_HASH, &expectedHash)) {
-        TOWXLog("TOWX|SB|P2A|META-READ-FAIL");
+    if (!TOWXReadToken(gGenerationToken, &generation) ||
+        !TOWXReadToken(gCountToken, &count) ||
+        !TOWXReadToken(gStageToken, &stage)) {
+        TOWXLog("TOWX|SB|P2A1|STATE-READ-FAIL");
         return;
     }
 
-    if (length64 == 0 || length64 > TOWX_P2A_MAX_BYTES) {
-        TOWXLog("TOWX|SB|P2A|BAD-LENGTH|generation=%llu|count=%llu|length=%llu",
-                (unsigned long long)generation,
-                (unsigned long long)count,
-                (unsigned long long)length64);
-        return;
-    }
-
-    size_t length = (size_t)length64;
-    uint8_t buffer[TOWX_P2A_MAX_BYTES];
-    memset(buffer, 0, sizeof(buffer));
-    if (!TOWXReadAvatar(buffer, length)) {
-        TOWXLog("TOWX|SB|P2A|CHUNK-READ-FAIL|generation=%llu|length=%zu",
-                (unsigned long long)generation, length);
-        return;
-    }
-
-    uint64_t actualHash = TOWXFNV1a64(buffer, length);
-    if (actualHash != expectedHash) {
-        TOWXLog("TOWX|SB|P2A|HASH-MISMATCH|generation=%llu|expected=%016llx|actual=%016llx",
-                (unsigned long long)generation,
-                (unsigned long long)expectedHash,
-                (unsigned long long)actualHash);
-        return;
-    }
-
-    if (!TOWXWriteAvatar(buffer, length)) {
-        TOWXLog("TOWX|SB|P2A|WRITE-FAIL|generation=%llu|length=%zu",
-                (unsigned long long)generation, length);
-        return;
-    }
-
-    TOWXLog("TOWX|SB|P2A|AVATAR0-PASS|generation=%llu|count=%llu|bytes=%zu|hash=%016llx|file=%s",
+    TOWXLog("TOWX|SB|P2A1|READY-RECV|generation=%llu|stage=%llu|stageName=%s|count=%llu",
             (unsigned long long)generation,
-            (unsigned long long)count,
-            length,
-            (unsigned long long)actualHash,
-            kAvatarPath);
+            (unsigned long long)stage,
+            TOWXStageName(stage),
+            (unsigned long long)count);
+
+    if (stage == 130 && count > 0 && count <= 6) {
+        TOWXLog("TOWX|SB|P2A1|COUNT-PASS|generation=%llu|count=%llu",
+                (unsigned long long)generation,
+                (unsigned long long)count);
+    } else if (stage == 190) {
+        TOWXLog("TOWX|SB|P2A1|WX-EXCEPTION-SIGNAL|generation=%llu",
+                (unsigned long long)generation);
+    }
 }
 
 __attribute__((constructor)) static void TOWXSpringBoardDataBridgeInit(void) {
-    TOWXLog("TOWX|SB|P2A|LOADED|v0.2.0");
-    static int readyToken = 0;
-    dispatch_queue_t queue = dispatch_queue_create("com.dream.towx.p2a.receiver", DISPATCH_QUEUE_SERIAL);
-    uint32_t status = notify_register_dispatch(TOWX_P2A_READY, &readyToken, queue, ^(int token) {
+    TOWXLog("TOWX|SB|P2A1|LOADED|v0.2.1");
+
+    if (!TOWXRegisterState(TOWX_P2A1_GENERATION, &gGenerationToken) ||
+        !TOWXRegisterState(TOWX_P2A1_COUNT, &gCountToken) ||
+        !TOWXRegisterState(TOWX_P2A1_STAGE, &gStageToken)) {
+        TOWXLog("TOWX|SB|P2A1|INIT-ABORT|state-registration");
+        return;
+    }
+
+    dispatch_queue_t queue = dispatch_queue_create("com.dream.towx.p2a1.receiver", DISPATCH_QUEUE_SERIAL);
+    uint32_t status = notify_register_dispatch(TOWX_P2A1_READY, &gReadyToken, queue, ^(int token) {
         (void)token;
         TOWXHandleReady();
     });
     if (status == NOTIFY_STATUS_OK) {
-        TOWXLog("TOWX|SB|P2A|READY-LISTENER");
+        TOWXLog("TOWX|SB|P2A1|READY-LISTENER");
     } else {
-        TOWXLog("TOWX|SB|P2A|READY-LISTENER-FAIL|status=%u", status);
+        TOWXLog("TOWX|SB|P2A1|READY-LISTENER-FAIL|status=%u", status);
     }
 }
