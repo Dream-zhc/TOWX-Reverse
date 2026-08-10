@@ -1,4 +1,4 @@
-name: Diagnose P2A4 WeChat Build
+name: Diagnose P2A4 Builds
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'WeChatGoldenAdapter/**'
+      - 'SpringBoardDataBridge/**'
       - '.github/workflows/diagnose-p2a4.yml'
 
 permissions:
@@ -53,18 +54,31 @@ jobs:
           CLEAN_STATUS=$?
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS=arm64 TARGET="$TARGET_VALUE" >> ../p2a4-wechat-build.log 2>&1
           BUILD_STATUS=$?
-          {
-            echo "clean_status=$CLEAN_STATUS"
-            echo "build_status=$BUILD_STATUS"
-          } > ../p2a4-wechat-status.txt
+          printf 'clean_status=%s\nbuild_status=%s\n' "$CLEAN_STATUS" "$BUILD_STATUS" > ../p2a4-wechat-status.txt
           cat ../p2a4-wechat-build.log
           exit 0
 
-      - name: Upload diagnostic log
+      - name: Capture SpringBoard linker compiler output
+        working-directory: SpringBoardDataBridge
+        shell: bash
+        run: |
+          set +e
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE" > ../p2a4-sb-build.log 2>&1
+          CLEAN_STATUS=$?
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE" >> ../p2a4-sb-build.log 2>&1
+          BUILD_STATUS=$?
+          printf 'clean_status=%s\nbuild_status=%s\n' "$CLEAN_STATUS" "$BUILD_STATUS" > ../p2a4-sb-status.txt
+          cat ../p2a4-sb-build.log
+          exit 0
+
+      - name: Upload diagnostic logs
         uses: actions/upload-artifact@v4
         with:
-          name: P2A4-WeChat-Compiler-Log
+          name: P2A4-Compiler-Logs
           path: |
             p2a4-wechat-build.log
             p2a4-wechat-status.txt
+            p2a4-sb-build.log
+            p2a4-sb-status.txt
           if-no-files-found: error
