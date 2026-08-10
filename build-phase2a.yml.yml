@@ -1,0 +1,147 @@
+name: Build TOWX Phase 2A — TWO DEBs
+
+on:
+  push:
+    paths:
+      - 'WeChatBackend/**'
+      - 'SpringBoardDataBridge/**'
+      - 'reference/**'
+      - '.github/workflows/build-phase2a.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+      GOLDEN_TROLLOPEN_SHA256: 5bac29748b81bc07131f8c641a41f4a102a3b2e9cb8447007b753716369ef802
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify repository root layout
+        run: |
+          set -euo pipefail
+          test -f WeChatBackend/Makefile
+          test -f SpringBoardDataBridge/Makefile
+          test -f reference/TrollOpen-1.3.7-wxbar1-test.deb
+          test -f .github/workflows/build.yml
+          if [ -d TOWX-Reverse-Phase2A ]; then
+            echo 'ERROR: Phase2A was uploaded as a nested folder instead of repository root' >&2
+            exit 1
+          fi
+
+      - name: Install tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind actual Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+          echo "SDK=$SDK_PATH"
+
+      - name: Build WeChat backend
+        working-directory: WeChatBackend
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS=arm64 TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS=arm64 TARGET="$TARGET_VALUE"
+          mkdir -p ../out
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          cp "$DEB" ../out/TOWX-WeChatBackend-8.0.69-P2A.deb
+
+      - name: Build SpringBoard data bridge
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          cp "$DEB" ../out/TOWX-SpringBoardDataBridge-P2A.deb
+
+      - name: Verify compiled bridge and backend
+        run: |
+          set -euo pipefail
+          rm -rf verify-wx verify-sb
+          mkdir verify-wx verify-sb
+          dpkg-deb -x out/TOWX-WeChatBackend-8.0.69-P2A.deb verify-wx
+          dpkg-deb -x out/TOWX-SpringBoardDataBridge-P2A.deb verify-sb
+          WX="$(find verify-wx -name 'TOWXWeChatBackend.dylib' -type f -print -quit)"
+          SB="$(find verify-sb -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          test -n "$WX" && test -n "$SB"
+          test "$(lipo -archs "$WX")" = "arm64"
+          SB_ARCHS="$(lipo -archs "$SB")"
+          echo "$SB_ARCHS" | grep -qw arm64
+          echo "$SB_ARCHS" | grep -qw arm64e
+          strings "$WX" | grep -Fq 'TOWX|WX|P2A|PUSH'
+          strings "$SB" | grep -Fq 'TOWX|SB|P2A|AVATAR0-PASS'
+          plutil -p "$(find verify-wx -name 'TOWXWeChatBackend.plist' -type f -print -quit)" | grep -Fq 'com.tencent.xin'
+          if plutil -p "$(find verify-wx -name 'TOWXWeChatBackend.plist' -type f -print -quit)" | grep -Fq 'com.apple.UIKit'; then exit 1; fi
+
+      - name: Repack golden TrollOpen without modifying core dylib
+        run: |
+          set -euo pipefail
+          BASE=reference/TrollOpen-1.3.7-wxbar1-test.deb
+          STAGE="$RUNNER_TEMP/trollopen-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          dpkg-deb -R "$BASE" "$STAGE"
+
+          CORE="$STAGE/var/jb/Library/MobileSubstrate/DynamicLibraries/TrollOpenJB.dylib"
+          echo "$GOLDEN_TROLLOPEN_SHA256  $CORE" | shasum -a 256 -c -
+
+          SB_DYLIB="$(find verify-sb -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          SB_PLIST="$(find verify-sb -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
+          DEST="$STAGE/var/jb/Library/MobileSubstrate/DynamicLibraries"
+          cp "$SB_DYLIB" "$DEST/TOWXSpringBoardDataBridge.dylib"
+          cp "$SB_PLIST" "$DEST/TOWXSpringBoardDataBridge.plist"
+
+          perl -0pi -e 's/^Version:.*$/Version: 1.3.7-wxbar1+TOWX.P2A/m' "$STAGE/DEBIAN/control"
+          dpkg-deb -b "$STAGE" out/TrollOpen-1.3.7-wxbar1-TOWX-P2A.deb
+
+          rm -rf verify-troll
+          mkdir verify-troll
+          dpkg-deb -x out/TrollOpen-1.3.7-wxbar1-TOWX-P2A.deb verify-troll
+          NEW_CORE=verify-troll/var/jb/Library/MobileSubstrate/DynamicLibraries/TrollOpenJB.dylib
+          echo "$GOLDEN_TROLLOPEN_SHA256  $NEW_CORE" | shasum -a 256 -c -
+          test -f verify-troll/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.dylib
+          test -f verify-troll/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.plist
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          rm -f out/TOWX-SpringBoardDataBridge-P2A.deb
+          shasum -a 256 out/*.deb > out/SHA256SUMS.txt
+          cat out/SHA256SUMS.txt
+
+      - name: Verify exactly two deliverable DEBs
+        run: |
+          set -euo pipefail
+          test -f out/TOWX-WeChatBackend-8.0.69-P2A.deb
+          test -f out/TrollOpen-1.3.7-wxbar1-TOWX-P2A.deb
+          COUNT="$(find out -maxdepth 1 -type f -name '*.deb' | wc -l | tr -d ' ')"
+          test "$COUNT" = "2"
+          echo 'Phase 2A deliverables:'
+          ls -lh out/*.deb
+
+      - name: Upload Phase 2A packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-Reverse-Phase2A
+          path: |
+            out/TOWX-WeChatBackend-8.0.69-P2A.deb
+            out/TrollOpen-1.3.7-wxbar1-TOWX-P2A.deb
+            out/SHA256SUMS.txt
