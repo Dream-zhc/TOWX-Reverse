@@ -1,0 +1,9 @@
+Package: com.dream.towxreverse.probe
+Name: TOWX Reverse Bridge Probe
+Version: 0.1.0
+Architecture: iphoneos-arm64e
+Description: RootHide diagnostic probe for TrollOpen x WeChat reverse integration. Ping/pong only; no UI or avatar logic.
+Maintainer: Dream
+Author: Dream
+Section: Tweaks
+Depends: mobilesubstrate
