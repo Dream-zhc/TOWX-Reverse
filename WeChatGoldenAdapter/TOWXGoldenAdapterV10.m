@@ -321,7 +321,7 @@ static NSArray<NSIndexPath *> *TOWXConversationPaths(UITableView *table) {
     return paths;
 }
 
-static BOOL TOWXIdentityAlreadyAdded(NSString *title, NSUInteger hash, NSUInteger count, NSString **titles, NSUInteger *hashes) {
+static BOOL TOWXIdentityAlreadyAdded(NSString *title, NSUInteger hash, NSUInteger count, NSString * __strong *titles, const NSUInteger *hashes) {
     for (NSUInteger i = 0; i < count; i++) {
         if (hashes[i] == hash && [titles[i] isEqualToString:title]) return YES;
     }
