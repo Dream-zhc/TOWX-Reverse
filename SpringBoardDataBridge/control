@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.sbdatabridge
 Name: TOWX SpringBoard V11 Smooth
-Version: 0.11.1-smooth1-fix1
+Version: 0.11.2-smooth1-fix2
 Architecture: iphoneos-arm64e
-Description: TOWX V11 Smooth Fix1 for TrollOpen 1.4.0 with real floating-container presentation following, edge-attached adaptive placement, native scroll viewport, interruptible animations, underlying WeChat host gating, and background avatar decoding.
+Description: TOWX V11 Smooth Fix2 for TrollOpen 1.4.0 with compact floating-container tracking, flush bottom/right edge shields, smaller scrollable avatars, immediate minimize hard-hide, underlying WeChat host gating, and background avatar decoding.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
