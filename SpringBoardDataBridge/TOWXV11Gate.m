@@ -19,28 +19,26 @@ BOOL TOWXV11ShouldShowAvatarModule(BOOL sessionVisible,
         show = NO;
         reason = "count-zero";
     } else if ([hostBundleID isEqualToString:kTOWXV11WeChatBundle]) {
-        /* Product rule: when the underlying/full-screen app is WeChat, the avatar rail is redundant,
-           regardless of which app TrollOpen is floating above it. */
+        /* Product rule: if the underlying/full-screen host itself is WeChat, never show the
+           external avatar module, regardless of which TrollOpen app is floating above it. */
         show = NO;
         reason = "host-is-wechat";
-    } else if (!weChatActive) {
-        show = NO;
-        reason = "wechat-inactive";
     } else if ([sessionBundleID isEqualToString:kTOWXV11WeChatBundle]) {
-        /* Desired primary case: WeChat itself is the floating TrollOpen app over Home/another app. */
+        /* TrollOpen can remote-host WeChat while UIApplication reports inactive, especially
+           across landscape transitions. The floating-session identity is stronger than appActive. */
         show = YES;
-        reason = "floating-wechat";
+        reason = weChatActive ? "floating-wechat-active" : "floating-wechat-remote";
     } else if (sessionBundleID.length == 0) {
+        /* TOJBClass022 bundle resolution is best-effort. If the host is definitely not WeChat and
+           we have valid exported contacts, fail open so rotation/session transitions do not blank UI. */
         show = YES;
-        reason = "session-unresolved-host-not-wechat";
-    } else if (hostBundleID.length == 0) {
-        /* If WeChat reports active but the floating app is known to be another app, fail closed until
-           the underlying host resolver catches up. This avoids showing the rail inside full-screen WeChat. */
-        show = NO;
-        reason = "host-unresolved-safe-hide";
+        reason = weChatActive ? "session-unresolved-active" : "session-unresolved-remote";
+    } else if (weChatActive) {
+        show = YES;
+        reason = "wechat-active-host-not-wechat";
     } else {
-        show = YES;
-        reason = "host-not-wechat";
+        show = NO;
+        reason = "known-nonwechat-session-inactive";
     }
 
     if (reasonOut) *reasonOut = reason;
@@ -48,5 +46,5 @@ BOOL TOWXV11ShouldShowAvatarModule(BOOL sessionVisible,
 }
 
 __attribute__((constructor)) static void TOWXV11GateMarker(void) {
-    TOWXV11DiagLog("GATE", "LOADED|Smooth1-FIX1|underlying-host-gate|wechat=com.tencent.xin");
+    TOWXV11DiagLog("GATE", "LOADED|Smooth1-FIX5|host-wechat-hard-hide|floating-wechat-active-signal-optional");
 }
