@@ -1,0 +1,181 @@
+name: Patch V11 Fix5 Geometry
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - '.github/workflows/patch-v11-fix5-geometry.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/trollopen-1.4.0-v11-smooth
+
+      - name: Apply landscape geometry fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('SpringBoardDataBridge/TOWXV11WindowFollowerFix3.m')
+          s = p.read_text()
+
+          old = '''static CGRect TOWXModelRectFix3(UIView *view, UIWindow *window) {
+    if (!view || !window || !window.windowScene) return CGRectNull;
+    @try {
+        CGRect rect = [view convertRect:view.bounds toCoordinateSpace:window.windowScene.coordinateSpace];
+        return TOWXRectFiniteFix3(rect) ? rect : CGRectNull;
+    } @catch (__unused NSException *exception) {
+        return CGRectNull;
+    }
+}
+'''
+          new = '''static id<UICoordinateSpace> TOWXScreenCoordinateSpaceFix5(UIWindow *window) {
+    if (window.screen) return window.screen.coordinateSpace;
+    if (window.windowScene) return window.windowScene.coordinateSpace;
+    return nil;
+}
+
+static CGRect TOWXModelRectFix3(UIView *view, UIWindow *window) {
+    id<UICoordinateSpace> coordinateSpace = TOWXScreenCoordinateSpaceFix5(window);
+    if (!view || !window || !coordinateSpace) return CGRectNull;
+    @try {
+        CGRect rect = [view convertRect:view.bounds toCoordinateSpace:coordinateSpace];
+        return TOWXRectFiniteFix3(rect) ? rect : CGRectNull;
+    } @catch (__unused NSException *exception) {
+        return CGRectNull;
+    }
+}
+'''
+          if old not in s:
+              raise SystemExit('model rect target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''static CGRect TOWXPresentationRectFix3(UIView *view, UIWindow *window) {
+    if (!view || !window || !window.windowScene) return CGRectNull;
+    @try {
+'''
+          new = '''static CGRect TOWXPresentationRectFix3(UIView *view, UIWindow *window) {
+    id<UICoordinateSpace> coordinateSpace = TOWXScreenCoordinateSpaceFix5(window);
+    if (!view || !window || !coordinateSpace) return CGRectNull;
+    @try {
+'''
+          if old not in s:
+              raise SystemExit('presentation header target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            CGRect screenRect = [window convertRect:inWindow toCoordinateSpace:window.windowScene.coordinateSpace];
+'''
+          new = '''            CGRect screenRect = [window convertRect:inWindow toCoordinateSpace:coordinateSpace];
+'''
+          if old not in s:
+              raise SystemExit('presentation conversion target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    if (landscape) {
+        if (wr < 0.11 || wr > 0.78 || hr < 0.32 || hr > 0.995 || area < 0.045 || area > 0.72) return;
+    } else {
+'''
+          new = '''    if (landscape) {
+        /* TrollOpen landscape cards can be almost full display-height while still only occupying
+           a compact fraction of the width. Do not reject hr≈1.0 cards; width is the stronger guard. */
+        if (wr < 0.08 || wr > 0.78 || hr < 0.28 || hr > 1.12 || area < 0.035 || area > 0.78) return;
+    } else {
+'''
+          if old not in s:
+              raise SystemExit('landscape filter target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    if (landscape && wr >= 0.14 && wr <= 0.52 && hr >= 0.50) score += 170.0;
+'''
+          new = '''    if (landscape && wr >= 0.12 && wr <= 0.58 && hr >= 0.50) score += 220.0;
+    if (landscape && hr >= 0.88 && hr <= 1.08 && wr <= 0.58) score += 140.0;
+'''
+          if old not in s:
+              raise SystemExit('landscape scoring target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    CGRect screenBounds = session.windowScene.coordinateSpace.bounds;
+'''
+          new = '''    id<UICoordinateSpace> sessionCoordinateSpace = TOWXScreenCoordinateSpaceFix5(session);
+    CGRect screenBounds = sessionCoordinateSpace ? sessionCoordinateSpace.bounds : session.windowScene.coordinateSpace.bounds;
+'''
+          count = s.count(old)
+          if count < 2:
+              raise SystemExit(f'screen bounds targets expected >=2, got {count}')
+          s = s.replace(old, new)
+
+          old = '''        if (window == session || window.hidden || window.alpha <= 0.02 || window.windowScene != session.windowScene) continue;
+'''
+          new = '''        if (window == session || window.hidden || window.alpha <= 0.02) continue;
+        if (session.screen && window.screen && window.screen != session.screen) continue;
+'''
+          if old not in s:
+              raise SystemExit('window scene filter target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        if ((landscape && wr < 0.78 && hr < 0.995) || (!landscape && wr < 0.97 && hr < 0.995)) {
+'''
+          new = '''        if ((landscape && wr < 0.78 && hr < 1.12) || (!landscape && wr < 0.97 && hr < 0.995)) {
+'''
+          if old not in s:
+              raise SystemExit('fallback target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        TOWXV11DiagLog("FOLLOWER", "ANCHOR-MISS|fix=3|epoch=%llu|orientation=%ld|policy=fail-closed",
+                       (unsigned long long)gAnchorEpochFix3, (long)orientation);
+'''
+          new = '''        TOWXV11DiagLog("FOLLOWER", "ANCHOR-MISS|fix=5|epoch=%llu|orientation=%ld|landscape=%d|screen={%.1f,%.1f}|policy=fail-closed",
+                       (unsigned long long)gAnchorEpochFix3, (long)orientation, landscape ? 1 : 0,
+                       CGRectGetWidth(screenBounds), CGRectGetHeight(screenBounds));
+'''
+          if old not in s:
+              raise SystemExit('anchor miss log target not found')
+          s = s.replace(old, new, 1)
+
+          s = s.replace('"ANCHOR-FOUND|fix=3|', '"ANCHOR-FOUND|fix=5|')
+          s = s.replace('"TRACKING-BEGIN|fix=3|', '"TRACKING-BEGIN|fix=5|')
+          s = s.replace('"TRACKING-END|fix=3|', '"TRACKING-END|fix=5|')
+          s = s.replace('"VISUAL-LOST|fix=3|', '"VISUAL-LOST|fix=5|')
+          s = s.replace('"START|fix=3|', '"START|fix=5|')
+          s = s.replace('"STOP|fix=3|', '"STOP|fix=5|')
+          s = s.replace('Smooth1-FIX3|rotation-rediscovery+landscape-compact+presentation+displaylink',
+                        'Smooth1-FIX5|screen-coordinate-space+landscape-fullheight-card+presentation+displaylink')
+          p.write_text(s)
+
+          p = Path('SpringBoardDataBridge/TOWXV11AvatarControllerFix2.m')
+          s = p.read_text()
+          old = '''static CGRect TOWXScreenBounds(UIWindow *session) {
+    if (session.windowScene) return session.windowScene.coordinateSpace.bounds;
+    return session.screen ? session.screen.bounds : UIScreen.mainScreen.bounds;
+}
+'''
+          new = '''static CGRect TOWXScreenBounds(UIWindow *session) {
+    /* UIScreen.coordinateSpace is orientation-aware and is shared by all TrollOpen windows on the
+       physical display. This avoids stale UIWindowScene orientation values during landscape. */
+    if (session.screen) return session.screen.coordinateSpace.bounds;
+    if (session.windowScene) return session.windowScene.coordinateSpace.bounds;
+    return UIScreen.mainScreen.coordinateSpace.bounds;
+}
+'''
+          if old not in s:
+              raise SystemExit('avatar controller screen bounds target not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('Smooth1-FIX2|flush-edge+44pt-scroll+fail-closed-geometry+minimize-hard-hide',
+                        'Smooth1-FIX5|95pct+8pt-gap+integer-slots+landscape-right+screen-space-follower')
+          p.write_text(s)
+          PY
+
+      - name: Commit Fix5 geometry
+        run: |
+          git config user.name 'Dream-zhc Actions'
+          git config user.email '83204117+Dream-zhc@users.noreply.github.com'
+          git add SpringBoardDataBridge/TOWXV11WindowFollowerFix3.m SpringBoardDataBridge/TOWXV11AvatarControllerFix2.m
+          git commit -m 'fix: recover landscape rail with screen-space follower'
+          git push origin HEAD:test/trollopen-1.4.0-v11-smooth
