@@ -1,0 +1,211 @@
+name: Patch V11 Fix4 Standalone Fallback
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - '.github/workflows/patch-v11-fix4.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/trollopen-1.4.0-v11-smooth
+
+      - name: Apply Fix4 source changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('WeChatGoldenAdapter/TOWXGoldenAdapterV10.m')
+          s = p.read_text()
+
+          old = '''static NSMutableDictionary<NSString *, UITableViewCell *> *gPrefetchedCells = nil;
+static __weak UITableView *gPrefetchTable = nil;
+'''
+          new = '''static NSMutableDictionary<NSString *, UITableViewCell *> *gPrefetchedCells = nil;
+static __weak UITableView *gPrefetchTable = nil;
+static __weak UITableView *gDiscoveredConversationTable = nil;
+static BOOL gStandaloneMissingLogged = NO;
+'''
+          if old not in s:
+              raise SystemExit('V10 globals target not found')
+          s = s.replace(old, new, 1)
+
+          anchor = '''static void TOWXHeavyTick(void) {
+    UITableView *table = (UITableView *)TOWXGoldenObjectAtOffset(TOWX_GOLDEN_TABLE_OFFSET);
+'''
+          insert = r'''static void TOWXCollectTablesDeep(UIView *view, NSMutableArray<UITableView *> *tables) {
+    if (!view) return;
+    if ([view isKindOfClass:[UITableView class]]) [tables addObject:(UITableView *)view];
+    for (UIView *subview in view.subviews) TOWXCollectTablesDeep(subview, tables);
+}
+
+static NSInteger TOWXConversationTableScore(UITableView *table) {
+    if (![table isKindOfClass:[UITableView class]]) return NSIntegerMin;
+    NSArray<NSIndexPath *> *paths = TOWXConversationPaths(table);
+    if (paths.count == 0) return NSIntegerMin;
+
+    NSUInteger identityCount = 0;
+    NSUInteger sampleCount = MIN((NSUInteger)18, paths.count);
+    for (NSUInteger i = 0; i < sampleCount; i++) {
+        NSIndexPath *path = paths[i];
+        NSString *title = nil;
+        NSUInteger hash = 0;
+        if (TOWXIdentityFromCell(TOWXCellForPath(table, path), &title, &hash, NULL) && title.length > 0 && hash != 0) {
+            identityCount += 1;
+        }
+    }
+    if (identityCount < 2) return NSIntegerMin;
+
+    CGFloat width = CGRectGetWidth(table.bounds);
+    CGFloat height = CGRectGetHeight(table.bounds);
+    NSInteger score = (NSInteger)identityCount * 1000 + (NSInteger)MIN((NSUInteger)100, paths.count) * 5;
+    if (width >= 250.0) score += 200;
+    if (height >= 240.0) score += 100;
+    return score;
+}
+
+static UITableView *TOWXDiscoverConversationTable(void) {
+    UIWindow *window = TOWXActiveWindow();
+    UINavigationController *nav = TOWXFindNavigationController(window.rootViewController);
+    if (!nav || nav.viewControllers.count == 0) return nil;
+    UIViewController *root = nav.viewControllers.firstObject;
+    UIView *rootView = root.viewIfLoaded;
+    if (!rootView) return nil;
+
+    NSMutableArray<UITableView *> *tables = [NSMutableArray array];
+    TOWXCollectTablesDeep(rootView, tables);
+    UITableView *best = nil;
+    NSInteger bestScore = NSIntegerMin;
+    for (UITableView *candidate in tables) {
+        NSInteger score = TOWXConversationTableScore(candidate);
+        if (score > bestScore) {
+            bestScore = score;
+            best = candidate;
+        }
+    }
+
+    if (best && gDiscoveredConversationTable != best) {
+        gDiscoveredConversationTable = best;
+        TOWXLog("TOWX|WX|P2A4|TABLE-DISCOVERY|v11|table=%p|class=%s|score=%ld|sections=%ld|rows0=%ld",
+                best,
+                object_getClassName(best) ?: "?",
+                (long)bestScore,
+                (long)[best numberOfSections],
+                (long)([best numberOfSections] > 0 ? [best numberOfRowsInSection:0] : 0));
+    }
+    return best;
+}
+
+static UITableView *TOWXResolveConversationTable(void) {
+    if (gGoldenBase == 0) gGoldenBase = TOWXFindGoldenBase();
+    if (gGoldenBase != 0) {
+        UITableView *goldenTable = (UITableView *)TOWXGoldenObjectAtOffset(TOWX_GOLDEN_TABLE_OFFSET);
+        if ([goldenTable isKindOfClass:[UITableView class]]) return goldenTable;
+    }
+
+    if (!gStandaloneMissingLogged) {
+        gStandaloneMissingLogged = YES;
+        TOWXLog("TOWX|WX|P2A4|STANDALONE-MISSING|v11|fallback=table-discovery");
+    }
+    return TOWXDiscoverConversationTable();
+}
+
+static void TOWXHeavyTick(void) {
+    UITableView *table = TOWXResolveConversationTable();
+'''
+          if anchor not in s:
+              raise SystemExit('V10 heavy tick target not found')
+          s = s.replace(anchor, insert, 1)
+
+          old = '''        if (gGoldenBase == 0) {
+            gGoldenBase = TOWXFindGoldenBase();
+            if (gGoldenBase == 0) {
+                if ((gTick % 50U) == 0U) TOWXPublish(510, 0, YES);
+                return;
+            }
+            TOWXPublish(520, 0, YES);
+        }
+        UIView *bar = (UIView *)TOWXGoldenObjectAtOffset(TOWX_GOLDEN_BAR_OFFSET);
+'''
+          new = '''        if (gGoldenBase == 0) gGoldenBase = TOWXFindGoldenBase();
+        UIView *bar = gGoldenBase != 0 ? (UIView *)TOWXGoldenObjectAtOffset(TOWX_GOLDEN_BAR_OFFSET) : nil;
+'''
+          if old not in s:
+              raise SystemExit('V10 hard golden gate target not found')
+          s = s.replace(old, new, 1)
+
+          old = 'TOWXLog("TOWX|WX|P2A4|ADAPTER-START|v0.10.0|mode=table-first15+prefetch+direct-switch|max=15");'
+          new = 'TOWXLog("TOWX|WX|P2A4|ADAPTER-START|v0.10.1|mode=standalone-optional+table-discovery+first15+direct-switch|max=15");'
+          if old not in s:
+              raise SystemExit('V10 start marker target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('SpringBoardDataBridge/TOWXV11Diagnostics.m')
+          s = p.read_text()
+          if '#include <time.h>' not in s:
+              s = s.replace('#include <sys/types.h>\n', '#include <sys/types.h>\n#include <time.h>\n', 1)
+          old = '''    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    long millis = (long)(tv.tv_usec / 1000);
+
+    char line[1800];
+    int m = snprintf(line, sizeof(line), "%lld.%03ld TOWX|V11|%s|%s\\n",
+                     (long long)tv.tv_sec,
+                     millis,
+                     component ? component : "?",
+                     body);
+'''
+          new = '''    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    long millis = (long)(tv.tv_usec / 1000);
+    time_t seconds = (time_t)tv.tv_sec;
+    struct tm localTm;
+    memset(&localTm, 0, sizeof(localTm));
+    localtime_r(&seconds, &localTm);
+    char timestamp[64];
+    if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &localTm) == 0) {
+        snprintf(timestamp, sizeof(timestamp), "%lld", (long long)tv.tv_sec);
+    }
+
+    char line[1800];
+    int m = snprintf(line, sizeof(line), "%s.%03ld TOWX|V11|%s|%s\\n",
+                     timestamp,
+                     millis,
+                     component ? component : "?",
+                     body);
+'''
+          if old not in s:
+              raise SystemExit('diagnostics timestamp target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('WeChatGoldenAdapter/control')
+          s = p.read_text()
+          s = s.replace('Version: 0.10.0-fix3', 'Version: 0.10.1-fix4', 1)
+          s = s.replace('Description: TOWX WeChat adapter with up to 15 conversation snapshots, offscreen cell prefetch, direct chat-to-chat switching, stable avatar export, and compatibility with the verified Standalone 0.6 base.',
+                        'Description: TOWX WeChat Fix4 adapter with up to 15 conversation snapshots, standalone-optional conversation-table discovery, offscreen cell prefetch, direct chat-to-chat switching, and stable avatar export.', 1)
+          p.write_text(s)
+
+          p = Path('SpringBoardDataBridge/control')
+          s = p.read_text()
+          s = s.replace('Version: 0.11.3-smooth1-fix3', 'Version: 0.11.4-smooth1-fix4', 1)
+          s = s.replace('Description: TOWX V11 Smooth Fix3 for TrollOpen 1.4.0', 'Description: TOWX V11 Smooth Fix4 for TrollOpen 1.4.0', 1)
+          p.write_text(s)
+          PY
+
+      - name: Commit Fix4
+        run: |
+          git config user.name 'Dream-zhc Actions'
+          git config user.email '83204117+Dream-zhc@users.noreply.github.com'
+          git add WeChatGoldenAdapter/TOWXGoldenAdapterV10.m WeChatGoldenAdapter/control SpringBoardDataBridge/TOWXV11Diagnostics.m SpringBoardDataBridge/control
+          git commit -m 'fix: make WeChat standalone optional and humanize diagnostics time'
+          git push origin HEAD:test/trollopen-1.4.0-v11-smooth
