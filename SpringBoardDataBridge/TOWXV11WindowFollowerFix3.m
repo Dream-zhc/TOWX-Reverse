@@ -5,20 +5,20 @@
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
 
-static CADisplayLink *gDisplayLinkFix3 = nil;
-static TOWXV11FollowerUpdateHandler gUpdateHandlerFix3 = nil;
-static BOOL gEnabledFix3 = NO;
-static BOOL gTrackingFix3 = NO;
-static BOOL gHasLastRectFix3 = NO;
-static CGRect gLastRectFix3 = {{0,0},{0,0}};
-static NSUInteger gStableFramesFix3 = 0;
-static __weak UIView *gAnchorViewFix3 = nil;
-static __weak UIWindow *gAnchorWindowFix3 = nil;
-static uint64_t gAnchorEpochFix3 = 0;
-static UIInterfaceOrientation gAnchorOrientationFix3 = UIInterfaceOrientationUnknown;
-static CGSize gAnchorScreenSizeFix3 = {0,0};
-static BOOL gRediscoveryScheduledFix3 = NO;
-static BOOL gInvalidReportedFix3 = NO;
+static CADisplayLink *gDisplayLinkFix5 = nil;
+static TOWXV11FollowerUpdateHandler gUpdateHandlerFix5 = nil;
+static BOOL gEnabledFix5 = NO;
+static BOOL gTrackingFix5 = NO;
+static BOOL gHasLastRectFix5 = NO;
+static CGRect gLastRectFix5 = {{0,0},{0,0}};
+static NSUInteger gStableFramesFix5 = 0;
+static __weak UIView *gAnchorViewFix5 = nil;
+static __weak UIWindow *gAnchorWindowFix5 = nil;
+static uint64_t gAnchorEpochFix5 = 0;
+static CGSize gAnchorScreenSizeFix5 = {0,0};
+static BOOL gAnchorLandscapeFix5 = NO;
+static BOOL gInvalidReportedFix5 = NO;
+static CFTimeInterval gNextDiscoveryTimeFix5 = 0.0;
 
 typedef struct {
     __unsafe_unretained UIView *view;
@@ -26,117 +26,160 @@ typedef struct {
     CGRect rect;
     CGFloat score;
     NSUInteger depth;
-} TOWXCandidateFix3;
+} TOWXCandidateFix5;
 
-static BOOL TOWXRectFiniteFix3(CGRect rect) {
+static BOOL TOWXRectFiniteFix5(CGRect rect) {
     return isfinite(rect.origin.x) && isfinite(rect.origin.y) &&
            isfinite(rect.size.width) && isfinite(rect.size.height) &&
            rect.size.width > 40.0 && rect.size.height > 40.0;
 }
 
-static BOOL TOWXRectChangedFix3(CGRect a, CGRect b) {
-    const CGFloat e = 0.25;
-    return fabs(a.origin.x-b.origin.x)>e || fabs(a.origin.y-b.origin.y)>e ||
-           fabs(a.size.width-b.size.width)>e || fabs(a.size.height-b.size.height)>e;
+static BOOL TOWXRectChangedFix5(CGRect a, CGRect b) {
+    const CGFloat epsilon = 0.25;
+    return fabs(a.origin.x - b.origin.x) > epsilon ||
+           fabs(a.origin.y - b.origin.y) > epsilon ||
+           fabs(a.size.width - b.size.width) > epsilon ||
+           fabs(a.size.height - b.size.height) > epsilon;
 }
 
-static NSArray<UIWindow *> *TOWXAllWindowsFix3(void) {
-    UIApplication *app = UIApplication.sharedApplication;
-    NSMutableOrderedSet<UIWindow *> *set = [NSMutableOrderedSet orderedSet];
-    for (UIWindow *window in app.windows ?: @[]) if (window) [set addObject:window];
-    for (UIScene *scene in app.connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows ?: @[]) if (window) [set addObject:window];
+static id<UICoordinateSpace> TOWXCoordinateSpaceFix5(UIWindow *window) {
+    if (window.screen) return window.screen.coordinateSpace;
+    if (window.windowScene) return window.windowScene.coordinateSpace;
+    return nil;
+}
+
+static CGRect TOWXScreenBoundsFix5(UIWindow *session) {
+    id<UICoordinateSpace> coordinateSpace = TOWXCoordinateSpaceFix5(session);
+    if (coordinateSpace) return coordinateSpace.bounds;
+    if (session.screen) return session.screen.bounds;
+    return UIScreen.mainScreen.bounds;
+}
+
+static BOOL TOWXLandscapeFix5(UIWindow *session, CGRect screenBounds) {
+    BOOL screenLandscape = CGRectGetWidth(screenBounds) > CGRectGetHeight(screenBounds);
+    CGRect sessionFrame = session.frame;
+    if (TOWXRectFiniteFix5(sessionFrame)) {
+        BOOL frameLandscape = CGRectGetWidth(sessionFrame) > CGRectGetHeight(sessionFrame);
+        CGFloat wr = CGRectGetWidth(sessionFrame) / MAX(1.0, CGRectGetWidth(screenBounds));
+        CGFloat hr = CGRectGetHeight(sessionFrame) / MAX(1.0, CGRectGetHeight(screenBounds));
+        /* TOJBClass022 is normally a near-full-screen control window. Its frame orientation is a
+           stronger signal than the stale interfaceOrientation value seen during TrollOpen rotation. */
+        if (wr > 0.88 && hr > 0.88) return frameLandscape;
     }
-    return set.array;
+    return screenLandscape;
 }
 
-static CGRect TOWXModelRectFix3(UIView *view, UIWindow *window) {
-    if (!view || !window || !window.windowScene) return CGRectNull;
+static NSArray<UIWindow *> *TOWXAllWindowsFix5(void) {
+    UIApplication *application = UIApplication.sharedApplication;
+    NSMutableOrderedSet<UIWindow *> *windows = [NSMutableOrderedSet orderedSet];
+    for (UIWindow *window in application.windows ?: @[]) {
+        if (window) [windows addObject:window];
+    }
+    for (UIScene *scene in application.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows ?: @[]) {
+            if (window) [windows addObject:window];
+        }
+    }
+    return windows.array;
+}
+
+static CGRect TOWXModelRectFix5(UIView *view, UIWindow *window) {
+    id<UICoordinateSpace> coordinateSpace = TOWXCoordinateSpaceFix5(window);
+    if (!view || !window || !coordinateSpace) return CGRectNull;
     @try {
-        CGRect rect = [view convertRect:view.bounds toCoordinateSpace:window.windowScene.coordinateSpace];
-        return TOWXRectFiniteFix3(rect) ? rect : CGRectNull;
+        CGRect rect = [view convertRect:view.bounds toCoordinateSpace:coordinateSpace];
+        return TOWXRectFiniteFix5(rect) ? rect : CGRectNull;
     } @catch (__unused NSException *exception) {
         return CGRectNull;
     }
 }
 
-static CGRect TOWXPresentationRectFix3(UIView *view, UIWindow *window) {
-    if (!view || !window || !window.windowScene) return CGRectNull;
+static CGRect TOWXPresentationRectFix5(UIView *view, UIWindow *window) {
+    id<UICoordinateSpace> coordinateSpace = TOWXCoordinateSpaceFix5(window);
+    if (!view || !window || !coordinateSpace) return CGRectNull;
     @try {
         if ([view isKindOfClass:[UIWindow class]]) {
-            CALayer *p = (CALayer *)view.layer.presentationLayer;
-            CGRect frame = p ? p.frame : ((UIWindow *)view).frame;
-            if (TOWXRectFiniteFix3(frame)) return frame;
+            CALayer *presentation = (CALayer *)view.layer.presentationLayer;
+            CGRect frame = presentation ? presentation.frame : ((UIWindow *)view).frame;
+            if (TOWXRectFiniteFix5(frame)) return frame;
         }
+
         CALayer *source = (CALayer *)view.layer.presentationLayer ?: view.layer;
         CALayer *root = (CALayer *)window.layer.presentationLayer ?: window.layer;
         if (source && root) {
             CGRect inWindow = [source convertRect:source.bounds toLayer:root];
-            CGRect screenRect = [window convertRect:inWindow toCoordinateSpace:window.windowScene.coordinateSpace];
-            if (TOWXRectFiniteFix3(screenRect)) return screenRect;
+            CGRect screenRect = [window convertRect:inWindow toCoordinateSpace:coordinateSpace];
+            if (TOWXRectFiniteFix5(screenRect)) return screenRect;
         }
     } @catch (__unused NSException *exception) {
     }
-    return TOWXModelRectFix3(view, window);
+    return TOWXModelRectFix5(view, window);
 }
 
-static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {
-    BOOL byGeometry = CGRectGetWidth(bounds) > CGRectGetHeight(bounds);
-    if (orientation == UIInterfaceOrientationUnknown) return byGeometry;
-    BOOL byOrientation = UIInterfaceOrientationIsLandscape(orientation);
-    return byOrientation == byGeometry ? byOrientation : byGeometry;
-}
-
-static BOOL TOWXLooksMinimizedFix3(CGRect rect, CGRect screenBounds) {
-    if (!TOWXRectFiniteFix3(rect)) return YES;
-    CGFloat sw = CGRectGetWidth(screenBounds), sh = CGRectGetHeight(screenBounds);
+static BOOL TOWXLooksMinimizedFix5(CGRect rect, CGRect screenBounds) {
+    if (!TOWXRectFiniteFix5(rect)) return YES;
+    CGFloat sw = CGRectGetWidth(screenBounds);
+    CGFloat sh = CGRectGetHeight(screenBounds);
     if (sw < 100.0 || sh < 100.0) return YES;
-    CGFloat wr = CGRectGetWidth(rect)/sw, hr = CGRectGetHeight(rect)/sh;
-    CGFloat ar = (CGRectGetWidth(rect)*CGRectGetHeight(rect))/(sw*sh);
-    return wr < 0.10 || hr < 0.16 || ar < 0.045;
+    CGFloat wr = CGRectGetWidth(rect) / sw;
+    CGFloat hr = CGRectGetHeight(rect) / sh;
+    CGFloat area = (CGRectGetWidth(rect) * CGRectGetHeight(rect)) / (sw * sh);
+    return wr < 0.10 || hr < 0.16 || area < 0.045;
 }
 
-static void TOWXEvaluateFix3(UIView *view,
+static void TOWXEvaluateFix5(UIView *view,
                              UIWindow *window,
                              CGRect screenBounds,
                              BOOL landscape,
                              NSUInteger depth,
-                             TOWXCandidateFix3 *best) {
+                             TOWXCandidateFix5 *best) {
     if (!view || !window || !best || view.hidden || view.alpha <= 0.02) return;
-    if (CGRectGetWidth(view.bounds) < 70.0 || CGRectGetHeight(view.bounds) < 90.0) return;
-    CGRect rect = TOWXModelRectFix3(view, window);
-    if (!TOWXRectFiniteFix3(rect)) return;
+    if (CGRectGetWidth(view.bounds) < 65.0 || CGRectGetHeight(view.bounds) < 80.0) return;
 
-    CGFloat sw = CGRectGetWidth(screenBounds), sh = CGRectGetHeight(screenBounds);
-    CGFloat wr = CGRectGetWidth(rect)/sw, hr = CGRectGetHeight(rect)/sh;
-    CGFloat area = (CGRectGetWidth(rect)*CGRectGetHeight(rect))/(sw*sh);
-    CGRect inter = CGRectIntersection(rect, screenBounds);
-    CGFloat visibleArea = CGRectIsNull(inter) ? 0.0 : CGRectGetWidth(inter)*CGRectGetHeight(inter);
-    CGFloat visibleRatio = visibleArea / MAX(1.0, CGRectGetWidth(rect)*CGRectGetHeight(rect));
+    CGRect rect = TOWXModelRectFix5(view, window);
+    if (!TOWXRectFiniteFix5(rect)) return;
+
+    CGFloat sw = CGRectGetWidth(screenBounds);
+    CGFloat sh = CGRectGetHeight(screenBounds);
+    CGFloat wr = CGRectGetWidth(rect) / MAX(1.0, sw);
+    CGFloat hr = CGRectGetHeight(rect) / MAX(1.0, sh);
+    CGFloat area = (CGRectGetWidth(rect) * CGRectGetHeight(rect)) / MAX(1.0, sw * sh);
+    CGRect intersection = CGRectIntersection(rect, screenBounds);
+    CGFloat visibleArea = CGRectIsNull(intersection) ? 0.0 : CGRectGetWidth(intersection) * CGRectGetHeight(intersection);
+    CGFloat visibleRatio = visibleArea / MAX(1.0, CGRectGetWidth(rect) * CGRectGetHeight(rect));
 
     if (landscape) {
-        if (wr < 0.11 || wr > 0.78 || hr < 0.32 || hr > 0.995 || area < 0.045 || area > 0.72) return;
+        /* In landscape the actual TrollOpen card can be almost full display height. Width, area,
+           TOJB ancestry and rounded presentation geometry distinguish it from the full-screen host. */
+        if (wr < 0.08 || wr > 0.78 || hr < 0.25 || hr > 1.15 || area < 0.03 || area > 0.78) return;
     } else {
-        if (wr < 0.28 || wr > 0.97 || hr < 0.34 || hr > 0.995 || area < 0.09 || area > 0.88) return;
+        if (wr < 0.25 || wr > 0.98 || hr < 0.30 || hr > 1.04 || area < 0.07 || area > 0.90) return;
     }
-    if (visibleRatio < 0.64) return;
+    if (visibleRatio < 0.50) return;
 
-    NSString *name = NSStringFromClass(view.class);
+    NSString *className = NSStringFromClass(view.class);
     CGFloat corner = view.layer.cornerRadius;
-    CGFloat targetArea = landscape ? 0.24 : 0.42;
-    CGFloat score = 160.0 - fabs(area-targetArea)*260.0;
-    score += MIN(MAX(corner,0.0),56.0)*7.5;
+    CGFloat targetArea = landscape ? 0.40 : 0.42;
+    CGFloat score = 160.0 - fabs(area - targetArea) * 220.0;
+    score += MIN(MAX(corner, 0.0), 56.0) * 7.5;
     if (view.clipsToBounds || view.layer.masksToBounds) score += 80.0;
-    if ([name rangeOfString:@"TOJB"].location != NSNotFound) score += 150.0;
+    if ([className rangeOfString:@"_UIScenePresentationView"].location != NSNotFound) score += 220.0;
+    if ([className rangeOfString:@"TOJB"].location != NSNotFound) score += 170.0;
     if (!CGAffineTransformIsIdentity(view.transform)) score += 42.0;
-    if (![view isKindOfClass:[UIScrollView class]] && ![view isKindOfClass:[UIImageView class]] && ![view isKindOfClass:[UILabel class]]) score += 30.0;
-    if (depth >= 1 && depth <= 7) score += 30.0;
-    if ([view isKindOfClass:[UIWindow class]]) score -= 45.0;
-    if (area > 0.72) score -= 220.0;
+    if (![view isKindOfClass:[UIScrollView class]] &&
+        ![view isKindOfClass:[UIImageView class]] &&
+        ![view isKindOfClass:[UILabel class]]) score += 30.0;
+    if (depth >= 1 && depth <= 8) score += 35.0;
+    if ([view isKindOfClass:[UIWindow class]]) score -= 55.0;
 
-    if (landscape && wr >= 0.14 && wr <= 0.52 && hr >= 0.50) score += 170.0;
-    if (!landscape && wr >= 0.42 && wr <= 0.92 && hr >= 0.48) score += 130.0;
+    if (landscape) {
+        if (wr >= 0.12 && wr <= 0.58 && hr >= 0.48) score += 240.0;
+        if (hr >= 0.85 && hr <= 1.10 && wr <= 0.58) score += 150.0;
+        if (wr > 0.70) score -= 260.0;
+    } else {
+        if (wr >= 0.38 && wr <= 0.92 && hr >= 0.45) score += 150.0;
+    }
 
     if (!best->view || score > best->score) {
         best->view = view;
@@ -147,186 +190,193 @@ static void TOWXEvaluateFix3(UIView *view,
     }
 }
 
-static void TOWXScanFix3(UIView *view,
+static void TOWXScanFix5(UIView *view,
                          UIWindow *window,
                          CGRect screenBounds,
                          BOOL landscape,
                          NSUInteger depth,
-                         TOWXCandidateFix3 *best) {
-    if (!view || depth > 11) return;
-    TOWXEvaluateFix3(view, window, screenBounds, landscape, depth, best);
-    for (UIView *child in view.subviews) TOWXScanFix3(child, window, screenBounds, landscape, depth+1, best);
+                         TOWXCandidateFix5 *best) {
+    if (!view || depth > 12) return;
+    TOWXEvaluateFix5(view, window, screenBounds, landscape, depth, best);
+    for (UIView *child in view.subviews) {
+        TOWXScanFix5(child, window, screenBounds, landscape, depth + 1, best);
+    }
 }
 
-static BOOL TOWXDiscoverFix3(void) {
+static BOOL TOWXDiscoverFix5(void) {
     UIWindow *session = TOWXV11CurrentSessionWindow();
-    if (!TOWXV11SessionIsVisible() || !session || !session.windowScene) return NO;
-    CGRect screenBounds = session.windowScene.coordinateSpace.bounds;
-    UIInterfaceOrientation orientation = TOWXV11CurrentSessionOrientation();
-    BOOL landscape = TOWXIsLandscapeFix3(orientation, screenBounds);
-    TOWXCandidateFix3 best = { nil, nil, CGRectZero, -CGFLOAT_MAX, 0 };
+    if (!TOWXV11SessionIsVisible() || !session) return NO;
 
-    TOWXScanFix3(session, session, screenBounds, landscape, 0, &best);
-    for (UIWindow *window in TOWXAllWindowsFix3()) {
-        if (window == session || window.hidden || window.alpha <= 0.02 || window.windowScene != session.windowScene) continue;
-        NSString *name = NSStringFromClass(window.class);
-        if ([name rangeOfString:@"TOJB"].location == NSNotFound) continue;
-        TOWXScanFix3(window, window, screenBounds, landscape, 0, &best);
+    CGRect screenBounds = TOWXScreenBoundsFix5(session);
+    BOOL landscape = TOWXLandscapeFix5(session, screenBounds);
+    TOWXCandidateFix5 best = { nil, nil, CGRectZero, -CGFLOAT_MAX, 0 };
+    NSArray<UIWindow *> *windows = TOWXAllWindowsFix5();
+
+    TOWXScanFix5(session, session, screenBounds, landscape, 0, &best);
+    for (UIWindow *window in windows) {
+        if (window == session || window.hidden || window.alpha <= 0.02) continue;
+        if (session.screen && window.screen && window.screen != session.screen) continue;
+        NSString *windowClass = NSStringFromClass(window.class);
+        if ([windowClass rangeOfString:@"TOJB"].location == NSNotFound) continue;
+        TOWXScanFix5(window, window, screenBounds, landscape, 0, &best);
     }
 
-    /* A compact TOJB session window is a safe fallback; a full-screen host is not. */
-    CGRect sessionRect = session.frame;
-    if (!best.view && TOWXRectFiniteFix3(sessionRect)) {
-        CGFloat wr = CGRectGetWidth(sessionRect)/MAX(1.0,CGRectGetWidth(screenBounds));
-        CGFloat hr = CGRectGetHeight(sessionRect)/MAX(1.0,CGRectGetHeight(screenBounds));
-        if ((landscape && wr < 0.78 && hr < 0.995) || (!landscape && wr < 0.97 && hr < 0.995)) {
-            best.view = session;
-            best.window = session;
-            best.rect = sessionRect;
-            best.score = 1.0;
-            best.depth = 0;
-        }
-    }
+    gAnchorEpochFix5 = TOWXV11CurrentSessionEpoch();
+    gAnchorScreenSizeFix5 = screenBounds.size;
+    gAnchorLandscapeFix5 = landscape;
 
-    gAnchorEpochFix3 = TOWXV11CurrentSessionEpoch();
-    gAnchorOrientationFix3 = orientation;
-    gAnchorScreenSizeFix3 = screenBounds.size;
     if (!best.view || !best.window) {
-        gAnchorViewFix3 = nil;
-        gAnchorWindowFix3 = nil;
-        TOWXV11DiagLog("FOLLOWER", "ANCHOR-MISS|fix=3|epoch=%llu|orientation=%ld|policy=fail-closed",
-                       (unsigned long long)gAnchorEpochFix3, (long)orientation);
+        gAnchorViewFix5 = nil;
+        gAnchorWindowFix5 = nil;
+        TOWXV11DiagLog("FOLLOWER",
+                       "ANCHOR-MISS|fix=5|epoch=%llu|orientation=%ld|landscape=%d|screen={%.1f,%.1f}|sessionFrame={{%.1f,%.1f},{%.1f,%.1f}}|windows=%lu|policy=fail-closed",
+                       (unsigned long long)gAnchorEpochFix5,
+                       (long)TOWXV11CurrentSessionOrientation(),
+                       landscape ? 1 : 0,
+                       screenBounds.size.width, screenBounds.size.height,
+                       session.frame.origin.x, session.frame.origin.y,
+                       session.frame.size.width, session.frame.size.height,
+                       (unsigned long)windows.count);
         return NO;
     }
 
-    gAnchorViewFix3 = best.view;
-    gAnchorWindowFix3 = best.window;
-    CGRect live = TOWXPresentationRectFix3(best.view, best.window);
-    if (!TOWXRectFiniteFix3(live)) live = best.rect;
-    TOWXV11DiagLog("FOLLOWER", "ANCHOR-FOUND|fix=3|epoch=%llu|orientation=%ld|window=%s|view=%s|depth=%lu|score=%.1f|rect={{%.1f,%.1f},{%.1f,%.1f}}",
-                   (unsigned long long)gAnchorEpochFix3, (long)orientation,
+    gAnchorViewFix5 = best.view;
+    gAnchorWindowFix5 = best.window;
+    CGRect live = TOWXPresentationRectFix5(best.view, best.window);
+    if (!TOWXRectFiniteFix5(live)) live = best.rect;
+    TOWXV11DiagLog("FOLLOWER",
+                   "ANCHOR-FOUND|fix=5|epoch=%llu|orientation=%ld|landscape=%d|window=%s|view=%s|depth=%lu|score=%.1f|rect={{%.1f,%.1f},{%.1f,%.1f}}|screen={%.1f,%.1f}",
+                   (unsigned long long)gAnchorEpochFix5,
+                   (long)TOWXV11CurrentSessionOrientation(),
+                   landscape ? 1 : 0,
                    NSStringFromClass(best.window.class).UTF8String ?: "?",
                    NSStringFromClass(best.view.class).UTF8String ?: "?",
-                   (unsigned long)best.depth, best.score,
-                   live.origin.x, live.origin.y, live.size.width, live.size.height);
+                   (unsigned long)best.depth,
+                   best.score,
+                   live.origin.x, live.origin.y, live.size.width, live.size.height,
+                   screenBounds.size.width, screenBounds.size.height);
     return YES;
 }
 
-static void TOWXScheduleRediscoveryFix3(void) {
-    if (gRediscoveryScheduledFix3) return;
-    gRediscoveryScheduledFix3 = YES;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        gRediscoveryScheduledFix3 = NO;
-        if (!gEnabledFix3 || !TOWXV11SessionIsVisible()) return;
-        (void)TOWXDiscoverFix3();
-        gHasLastRectFix3 = NO;
-    });
-}
-
-static CGRect TOWXReadVisualFix3(void) {
+static CGRect TOWXReadVisualFix5(void) {
     UIWindow *session = TOWXV11CurrentSessionWindow();
-    if (!gEnabledFix3 || !TOWXV11SessionIsVisible() || !session || !session.windowScene) return CGRectNull;
-    CGRect screenBounds = session.windowScene.coordinateSpace.bounds;
-    UIInterfaceOrientation orientation = TOWXV11CurrentSessionOrientation();
+    if (!gEnabledFix5 || !TOWXV11SessionIsVisible() || !session) return CGRectNull;
+
+    CGRect screenBounds = TOWXScreenBoundsFix5(session);
+    BOOL landscape = TOWXLandscapeFix5(session, screenBounds);
     uint64_t epoch = TOWXV11CurrentSessionEpoch();
+    BOOL geometryChanged = gAnchorEpochFix5 != epoch ||
+                           gAnchorLandscapeFix5 != landscape ||
+                           fabs(gAnchorScreenSizeFix5.width - screenBounds.size.width) > 0.5 ||
+                           fabs(gAnchorScreenSizeFix5.height - screenBounds.size.height) > 0.5;
 
-    if (gAnchorEpochFix3 != epoch || gAnchorOrientationFix3 != orientation ||
-        fabs(gAnchorScreenSizeFix3.width-screenBounds.size.width)>0.5 ||
-        fabs(gAnchorScreenSizeFix3.height-screenBounds.size.height)>0.5) {
-        gAnchorViewFix3 = nil;
-        gAnchorWindowFix3 = nil;
-        (void)TOWXDiscoverFix3();
+    CFTimeInterval now = CACurrentMediaTime();
+    if (geometryChanged || !gAnchorViewFix5 || !gAnchorWindowFix5) {
+        if (geometryChanged || now >= gNextDiscoveryTimeFix5) {
+            gNextDiscoveryTimeFix5 = now + 0.10;
+            (void)TOWXDiscoverFix5();
+        }
     }
 
-    UIView *view = gAnchorViewFix3;
-    UIWindow *window = gAnchorWindowFix3;
+    UIView *view = gAnchorViewFix5;
+    UIWindow *window = gAnchorWindowFix5;
     if (!view || !window || !view.window || view.hidden || view.alpha <= 0.02) {
-        TOWXScheduleRediscoveryFix3();
-        return CGRectNull;
+        if (now >= gNextDiscoveryTimeFix5) {
+            gNextDiscoveryTimeFix5 = now + 0.10;
+            (void)TOWXDiscoverFix5();
+            view = gAnchorViewFix5;
+            window = gAnchorWindowFix5;
+        }
+        if (!view || !window || !view.window || view.hidden || view.alpha <= 0.02) return CGRectNull;
     }
 
-    CGRect rect = TOWXPresentationRectFix3(view, window);
-    if (TOWXLooksMinimizedFix3(rect, screenBounds)) {
-        TOWXV11DiagLog("FOLLOWER", "VISUAL-LOST|fix=3|reason=minimized|rect={{%.1f,%.1f},{%.1f,%.1f}}",
-                       rect.origin.x, rect.origin.y, rect.size.width, rect.size.height);
+    CGRect rect = TOWXPresentationRectFix5(view, window);
+    if (TOWXLooksMinimizedFix5(rect, screenBounds)) {
+        TOWXV11DiagLog("FOLLOWER",
+                       "VISUAL-LOST|fix=5|reason=minimized|rect={{%.1f,%.1f},{%.1f,%.1f}}|screen={%.1f,%.1f}",
+                       rect.origin.x, rect.origin.y, rect.size.width, rect.size.height,
+                       screenBounds.size.width, screenBounds.size.height);
         return CGRectNull;
     }
     return rect;
 }
 
-@interface TOWXV11FollowerDriverFix3 : NSObject
+@interface TOWXV11FollowerDriverFix5 : NSObject
 + (instancetype)shared;
 - (void)tick:(CADisplayLink *)link;
 @end
 
-@implementation TOWXV11FollowerDriverFix3
+@implementation TOWXV11FollowerDriverFix5
 + (instancetype)shared {
-    static TOWXV11FollowerDriverFix3 *obj;
+    static TOWXV11FollowerDriverFix5 *driver = nil;
     static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{ obj = [self new]; });
-    return obj;
+    dispatch_once(&onceToken, ^{ driver = [self new]; });
+    return driver;
 }
+
 - (void)tick:(CADisplayLink *)link {
     (void)link;
-    if (!gEnabledFix3) return;
-    CGRect rect = TOWXReadVisualFix3();
+    if (!gEnabledFix5) return;
+
+    CGRect rect = TOWXReadVisualFix5();
     if (CGRectIsNull(rect)) {
-        if (!gInvalidReportedFix3) {
-            gInvalidReportedFix3 = YES;
-            TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix3;
+        if (!gInvalidReportedFix5) {
+            gInvalidReportedFix5 = YES;
+            TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix5;
             if (handler) handler(CGRectNull, NO);
         }
         return;
     }
-    gInvalidReportedFix3 = NO;
+    gInvalidReportedFix5 = NO;
 
-    if (!gHasLastRectFix3) {
-        gHasLastRectFix3 = YES;
-        gLastRectFix3 = rect;
-        gStableFramesFix3 = 0;
-        TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix3;
+    if (!gHasLastRectFix5) {
+        gHasLastRectFix5 = YES;
+        gLastRectFix5 = rect;
+        gStableFramesFix5 = 0;
+        TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix5;
         if (handler) handler(rect, NO);
         return;
     }
 
-    if (TOWXRectChangedFix3(gLastRectFix3, rect)) {
-        gStableFramesFix3 = 0;
-        if (!gTrackingFix3) {
-            gTrackingFix3 = YES;
-            TOWXV11DiagLog("FOLLOWER", "TRACKING-BEGIN|fix=3|rect={{%.1f,%.1f},{%.1f,%.1f}}",
+    if (TOWXRectChangedFix5(gLastRectFix5, rect)) {
+        gStableFramesFix5 = 0;
+        if (!gTrackingFix5) {
+            gTrackingFix5 = YES;
+            TOWXV11DiagLog("FOLLOWER", "TRACKING-BEGIN|fix=5|rect={{%.1f,%.1f},{%.1f,%.1f}}",
                            rect.origin.x, rect.origin.y, rect.size.width, rect.size.height);
         }
-        gLastRectFix3 = rect;
-        TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix3;
+        gLastRectFix5 = rect;
+        TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix5;
         if (handler) handler(rect, YES);
-    } else if (gTrackingFix3) {
-        gStableFramesFix3 += 1;
-        if (gStableFramesFix3 >= 4) {
-            gTrackingFix3 = NO;
-            gStableFramesFix3 = 0;
-            TOWXV11DiagLog("FOLLOWER", "TRACKING-END|fix=3|rect={{%.1f,%.1f},{%.1f,%.1f}}",
+    } else if (gTrackingFix5) {
+        gStableFramesFix5 += 1;
+        if (gStableFramesFix5 >= 4) {
+            gTrackingFix5 = NO;
+            gStableFramesFix5 = 0;
+            TOWXV11DiagLog("FOLLOWER", "TRACKING-END|fix=5|rect={{%.1f,%.1f},{%.1f,%.1f}}",
                            rect.origin.x, rect.origin.y, rect.size.width, rect.size.height);
-            TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix3;
+            TOWXV11FollowerUpdateHandler handler = gUpdateHandlerFix5;
             if (handler) handler(rect, NO);
         }
     }
 }
 @end
 
-static void TOWXEnsureDisplayLinkFix3(void) {
-    if (gDisplayLinkFix3) return;
-    gDisplayLinkFix3 = [CADisplayLink displayLinkWithTarget:[TOWXV11FollowerDriverFix3 shared] selector:@selector(tick:)];
+static void TOWXEnsureDisplayLinkFix5(void) {
+    if (gDisplayLinkFix5) return;
+    gDisplayLinkFix5 = [CADisplayLink displayLinkWithTarget:[TOWXV11FollowerDriverFix5 shared]
+                                                   selector:@selector(tick:)];
     if (@available(iOS 15.0, *)) {
         NSInteger maxFPS = UIScreen.mainScreen.maximumFramesPerSecond;
         if (maxFPS < 60) maxFPS = 60;
-        gDisplayLinkFix3.preferredFrameRateRange = CAFrameRateRangeMake(30.0, (float)maxFPS, (float)maxFPS);
+        gDisplayLinkFix5.preferredFrameRateRange = CAFrameRateRangeMake(30.0, (float)maxFPS, (float)maxFPS);
     }
-    [gDisplayLinkFix3 addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    gDisplayLinkFix3.paused = YES;
+    [gDisplayLinkFix5 addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    gDisplayLinkFix5.paused = YES;
 }
 
 void TOWXV11FollowerSetUpdateHandler(TOWXV11FollowerUpdateHandler handler) {
-    gUpdateHandlerFix3 = [handler copy];
+    gUpdateHandlerFix5 = [handler copy];
 }
 
 void TOWXV11FollowerSetEnabled(BOOL enabled) {
@@ -334,27 +384,35 @@ void TOWXV11FollowerSetEnabled(BOOL enabled) {
         dispatch_async(dispatch_get_main_queue(), ^{ TOWXV11FollowerSetEnabled(enabled); });
         return;
     }
-    TOWXEnsureDisplayLinkFix3();
-    if (gEnabledFix3 == enabled) return;
-    gEnabledFix3 = enabled;
-    gDisplayLinkFix3.paused = !enabled;
-    gHasLastRectFix3 = NO;
-    gTrackingFix3 = NO;
-    gStableFramesFix3 = 0;
-    gInvalidReportedFix3 = NO;
+
+    TOWXEnsureDisplayLinkFix5();
+    if (gEnabledFix5 == enabled) return;
+
+    gEnabledFix5 = enabled;
+    gDisplayLinkFix5.paused = !enabled;
+    gHasLastRectFix5 = NO;
+    gTrackingFix5 = NO;
+    gStableFramesFix5 = 0;
+    gInvalidReportedFix5 = NO;
+    gNextDiscoveryTimeFix5 = 0.0;
+
     if (enabled) {
-        (void)TOWXDiscoverFix3();
+        (void)TOWXDiscoverFix5();
     } else {
-        gAnchorViewFix3 = nil;
-        gAnchorWindowFix3 = nil;
+        gAnchorViewFix5 = nil;
+        gAnchorWindowFix5 = nil;
     }
-    TOWXV11DiagLog("FOLLOWER", "%s|fix=3|epoch=%llu", enabled ? "START" : "STOP", (unsigned long long)TOWXV11CurrentSessionEpoch());
+
+    TOWXV11DiagLog("FOLLOWER", "%s|fix=5|epoch=%llu",
+                   enabled ? "START" : "STOP",
+                   (unsigned long long)TOWXV11CurrentSessionEpoch());
 }
 
-BOOL TOWXV11FollowerIsEnabled(void) { return gEnabledFix3; }
-BOOL TOWXV11FollowerIsTracking(void) { return gTrackingFix3; }
-CGRect TOWXV11FollowerCurrentVisualRect(void) { return TOWXReadVisualFix3(); }
+BOOL TOWXV11FollowerIsEnabled(void) { return gEnabledFix5; }
+BOOL TOWXV11FollowerIsTracking(void) { return gTrackingFix5; }
+CGRect TOWXV11FollowerCurrentVisualRect(void) { return TOWXReadVisualFix5(); }
 
-__attribute__((constructor)) static void TOWXV11FollowerFix3Marker(void) {
-    TOWXV11DiagLog("FOLLOWER", "LOADED|Smooth1-FIX3|rotation-rediscovery+landscape-compact+presentation+displaylink");
+__attribute__((constructor)) static void TOWXV11FollowerFix5Marker(void) {
+    TOWXV11DiagLog("FOLLOWER",
+                   "LOADED|Smooth1-FIX5|screen-coordinate-space+landscape-fullheight-card+presentation+displaylink");
 }
