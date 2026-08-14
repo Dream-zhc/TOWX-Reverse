@@ -1,4 +1,4 @@
-name: Build TrollOpen 1.4.0 TOWX V11 Smooth Final
+name: Build TrollOpen 1.4.0 TOWX V11 Smooth Fix1
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
           ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
           echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Build V11 Smooth final bridge
+      - name: Build V11 Smooth Fix1 bridge
         working-directory: SpringBoardDataBridge
         run: |
           set -euo pipefail
@@ -50,24 +50,25 @@ jobs:
           make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
 
-          mkdir -p ../out-v11-final
+          mkdir -p ../out-v11-fix1
           DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
           test -n "$DEB"
-          cp "$DEB" ../out-v11-final/TOWX-SpringBoard-V11-Smooth1-Final.deb
-          dpkg-deb -x "$DEB" ../out-v11-final/extracted
+          cp "$DEB" ../out-v11-fix1/TOWX-SpringBoard-V11-Smooth1-Fix1.deb
+          dpkg-deb -x "$DEB" ../out-v11-fix1/extracted
 
-          DYLIB="$(find ../out-v11-final/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
-          PLIST="$(find ../out-v11-final/extracted -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
+          DYLIB="$(find ../out-v11-fix1/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          PLIST="$(find ../out-v11-fix1/extracted -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
           test -n "$DYLIB"
           test -n "$PLIST"
 
-          strings "$DYLIB" | grep -Fq 'Smooth1-FINAL|overlay-window+follower+placement+native-scroll+interruptible-anim+wechat-gate+bg-decode'
           strings "$DYLIB" | grep -Fq 'Smooth1-FINAL2|bundle-bfs+splitBundleID+bundle-change-detect+2s-watchdog'
-          strings "$DYLIB" | grep -Fq 'Smooth1-S2|presentation-layer+display-link'
-          strings "$DYLIB" | grep -Fq 'Smooth1-S4|native-scroll+uicontrol'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX1|underlying-workspace-context'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX1|visual-container-presentation+display-link'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX1|native-scroll+uicontrol+forced-range-diagnostics'
           strings "$DYLIB" | grep -Fq 'Smooth1-S5|interruptible-property-animator'
-          strings "$DYLIB" | grep -Fq 'Smooth1-S6|session-bundle-gate|wechat=com.tencent.xin'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX1|underlying-host-gate|wechat=com.tencent.xin'
           strings "$DYLIB" | grep -Fq 'Smooth1-S7|background-imageio+2s-watchdog'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX1|real-visual-anchor+scroll-viewport+host-wechat-gate'
 
           if strings "$DYLIB" | grep -Fq 'TOWX|SB|P2A4|LOADED|v0.10.0'; then
             echo 'ERROR: legacy V10 product still linked'
@@ -78,17 +79,17 @@ jobs:
             exit 1
           fi
 
-          cp "$DYLIB" ../out-v11-final/TOWXSpringBoardDataBridge.dylib
-          cp "$PLIST" ../out-v11-final/TOWXSpringBoardDataBridge.plist
-          file ../out-v11-final/TOWXSpringBoardDataBridge.dylib
-          shasum -a 256 ../out-v11-final/TOWXSpringBoardDataBridge.dylib > ../out-v11-final/SHA256SUMS.txt
+          cp "$DYLIB" ../out-v11-fix1/TOWXSpringBoardDataBridge.dylib
+          cp "$PLIST" ../out-v11-fix1/TOWXSpringBoardDataBridge.plist
+          file ../out-v11-fix1/TOWXSpringBoardDataBridge.dylib
+          shasum -a 256 ../out-v11-fix1/TOWXSpringBoardDataBridge.dylib > ../out-v11-fix1/SHA256SUMS.txt
 
-      - name: Upload V11 final bridge
+      - name: Upload V11 Smooth Fix1 bridge
         uses: actions/upload-artifact@v4
         with:
-          name: TOWX-V11-Smooth1-Final
+          name: TOWX-V11-Smooth1-Fix1
           path: |
-            out-v11-final/TOWX-SpringBoard-V11-Smooth1-Final.deb
-            out-v11-final/TOWXSpringBoardDataBridge.dylib
-            out-v11-final/TOWXSpringBoardDataBridge.plist
-            out-v11-final/SHA256SUMS.txt
+            out-v11-fix1/TOWX-SpringBoard-V11-Smooth1-Fix1.deb
+            out-v11-fix1/TOWXSpringBoardDataBridge.dylib
+            out-v11-fix1/TOWXSpringBoardDataBridge.plist
+            out-v11-fix1/SHA256SUMS.txt
