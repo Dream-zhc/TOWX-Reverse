@@ -9,6 +9,10 @@ on:
       - '.github/workflows/build-v11-fix5.yml'
   workflow_dispatch:
 
+concurrency:
+  group: towx-v11-fix5-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -56,11 +60,14 @@ jobs:
           dpkg-deb -x "$DEB" ../out-fix5/extracted
           DYLIB="$(find ../out-fix5/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
           test -n "$DYLIB"
-          strings "$DYLIB" | grep -Fq 'Smooth1-FIX5|host-wechat-hard-hide|floating-wechat-active-signal-optional'
-          strings "$DYLIB" | grep -Fq 'Smooth1-FIX5|portraitWidth=95pct|visibleGap=8|edgeShield=7|landscape=right-only|avatars=15'
-          strings "$DYLIB" | grep -Fq 'Smooth1-FIX5|15-cells+44pt+integer-visible-slots+8pt-visual-gap+smooth-scroll'
-          strings "$DYLIB" | grep -Fq '%Y-%m-%d %H:%M:%S'
+          strings "$DYLIB" > ../out-fix5/strings.txt
+          grep -F 'Smooth1-FIX5|host-wechat-hard-hide|floating-wechat-active-signal-optional' ../out-fix5/strings.txt
+          grep -F 'Smooth1-FIX5|portraitWidth=95pct|integerSlots|visibleGap=8|edgeShield=7|landscape=right-only|avatars=15' ../out-fix5/strings.txt
+          grep -F 'Smooth1-FIX5|15-cells+44pt+integer-visible-slots+8pt-visual-gap+smooth-scroll' ../out-fix5/strings.txt
+          grep -F 'Smooth1-FIX5|screen-coordinate-space+landscape-fullheight-card+presentation+displaylink' ../out-fix5/strings.txt
+          grep -F '%Y-%m-%d %H:%M:%S' ../out-fix5/strings.txt
           file "$DYLIB"
+          lipo -info "$DYLIB"
           cp "$DYLIB" ../out-fix5/TOWXSpringBoardDataBridge.dylib
           shasum -a 256 "$DYLIB" > ../out-fix5/SHA256SUMS.txt
 
