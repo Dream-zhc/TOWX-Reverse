@@ -62,7 +62,7 @@ jobs:
           test -n "$PLIST"
 
           strings "$DYLIB" | grep -Fq 'Smooth1-FINAL|overlay-window+follower+placement+native-scroll+interruptible-anim+wechat-gate+bg-decode'
-          strings "$DYLIB" | grep -Fq 'Smooth1-FINAL|focused-bundle-probe+2s-watchdog'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FINAL2|bundle-bfs+splitBundleID+bundle-change-detect+2s-watchdog'
           strings "$DYLIB" | grep -Fq 'Smooth1-S2|presentation-layer+display-link'
           strings "$DYLIB" | grep -Fq 'Smooth1-S4|native-scroll+uicontrol'
           strings "$DYLIB" | grep -Fq 'Smooth1-S5|interruptible-property-animator'

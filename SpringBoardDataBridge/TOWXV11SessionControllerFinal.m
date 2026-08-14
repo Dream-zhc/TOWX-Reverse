@@ -17,12 +17,12 @@ static uint64_t gSessionEpoch = 0;
 static BOOL gSessionVisible = NO;
 static UIInterfaceOrientation gSessionOrientation = UIInterfaceOrientationUnknown;
 static dispatch_source_t gSessionWatchdog = nil;
-static NSUInteger gUnresolvedWatchdogTicks = 0;
-static BOOL gVerboseProbeLogged = NO;
+static NSUInteger gBundleProbeTick = 0;
+static BOOL gMethodDiagnosticsLogged = NO;
 
-static NSArray<UIWindow *> *TOWXV11AllWindowsFinal(void) {
+static NSArray<UIWindow *> *TOWXV11AllWindowsV2(void) {
     UIApplication *app = UIApplication.sharedApplication;
-    NSMutableOrderedSet *set = [NSMutableOrderedSet orderedSet];
+    NSMutableOrderedSet<UIWindow *> *set = [NSMutableOrderedSet orderedSet];
     for (UIWindow *window in app.windows ?: @[]) if (window) [set addObject:window];
     for (UIScene *scene in app.connectedScenes) {
         if (![scene isKindOfClass:[UIWindowScene class]]) continue;
@@ -31,39 +31,41 @@ static NSArray<UIWindow *> *TOWXV11AllWindowsFinal(void) {
     return set.array;
 }
 
-static BOOL TOWXV11UsableSessionWindow(UIWindow *window) {
+static BOOL TOWXV11SessionUsableV2(UIWindow *window) {
     return window && !window.hidden && window.alpha > 0.01 &&
            [NSStringFromClass(window.class) isEqualToString:TOWXV11_SESSION_CLASS] &&
            CGRectGetWidth(window.bounds) > 100.0 && CGRectGetHeight(window.bounds) > 100.0;
 }
 
-static UIWindow *TOWXV11FindSessionFinal(void) {
-    if (TOWXV11UsableSessionWindow(gSessionWindow)) return gSessionWindow;
+static UIWindow *TOWXV11FindSessionV2(void) {
+    if (TOWXV11SessionUsableV2(gSessionWindow)) return gSessionWindow;
     UIWindow *best = nil;
-    CGFloat score = -CGFLOAT_MAX;
-    for (UIWindow *window in TOWXV11AllWindowsFinal()) {
-        if (!TOWXV11UsableSessionWindow(window)) continue;
-        CGFloat candidate = window.windowLevel * 100000.0 + CGRectGetWidth(window.bounds) * CGRectGetHeight(window.bounds);
-        if (candidate > score) { best = window; score = candidate; }
+    CGFloat bestScore = -CGFLOAT_MAX;
+    for (UIWindow *window in TOWXV11AllWindowsV2()) {
+        if (!TOWXV11SessionUsableV2(window)) continue;
+        CGFloat score = window.windowLevel * 100000.0 + CGRectGetWidth(window.bounds) * CGRectGetHeight(window.bounds);
+        if (window.isKeyWindow) score += 10000000.0;
+        if (!best || score > bestScore) { best = window; bestScore = score; }
     }
     return best;
 }
 
-static UIInterfaceOrientation TOWXV11OrientationFinal(UIWindow *window) {
+static UIInterfaceOrientation TOWXV11OrientationV2(UIWindow *window) {
     if (window.windowScene && window.windowScene.interfaceOrientation != UIInterfaceOrientationUnknown) return window.windowScene.interfaceOrientation;
     return CGRectGetWidth(window.bounds) > CGRectGetHeight(window.bounds) ? UIInterfaceOrientationLandscapeRight : UIInterfaceOrientationPortrait;
 }
 
-static BOOL TOWXV11PlausibleBundle(NSString *value) {
+static BOOL TOWXV11PlausibleBundleV2(NSString *value) {
     if (![value isKindOfClass:[NSString class]]) return NO;
-    if (value.length < 3 || value.length > 220) return NO;
-    if ([value rangeOfString:@"."].location == NSNotFound || [value rangeOfString:@"/"].location != NSNotFound || [value rangeOfString:@" "].location != NSNotFound) return NO;
-    if ([value isEqualToString:@"com.apple.springboard"] || [value hasPrefix:@"com.dream.towx"] || [value hasPrefix:@"com.charlieleung.trollopen"]) return NO;
+    NSString *v = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (v.length < 3 || v.length > 220) return NO;
+    if ([v rangeOfString:@"."].location == NSNotFound || [v rangeOfString:@"/"].location != NSNotFound || [v rangeOfString:@" "].location != NSNotFound) return NO;
+    if ([v isEqualToString:@"com.apple.springboard"] || [v hasPrefix:@"com.dream.towx"] || [v hasPrefix:@"com.charlieleung.trollopen"]) return NO;
     return YES;
 }
 
-static BOOL TOWXV11InstalledBundle(NSString *bundleID) {
-    if (!TOWXV11PlausibleBundle(bundleID)) return NO;
+static BOOL TOWXV11InstalledBundleV2(NSString *bundleID) {
+    if (!TOWXV11PlausibleBundleV2(bundleID)) return NO;
     Class proxyClass = NSClassFromString(@"LSApplicationProxy");
     SEL selector = NSSelectorFromString(@"applicationProxyForIdentifier:");
     if (!proxyClass || ![(id)proxyClass respondsToSelector:selector]) return YES;
@@ -73,8 +75,8 @@ static BOOL TOWXV11InstalledBundle(NSString *bundleID) {
     } @catch (__unused NSException *exception) { return NO; }
 }
 
-static id TOWXV11Getter(id object, NSString *name) {
-    if (!object) return nil;
+static id TOWXV11SafeGetterV2(id object, NSString *name) {
+    if (!object || !name.length) return nil;
     SEL selector = NSSelectorFromString(name);
     if (![object respondsToSelector:selector]) return nil;
     NSMethodSignature *signature = [object methodSignatureForSelector:selector];
@@ -86,104 +88,141 @@ static id TOWXV11Getter(id object, NSString *name) {
     @catch (__unused NSException *exception) { return nil; }
 }
 
-static id TOWXV11ObjectIvarFinal(id object, const char *name) {
-    if (!object) return nil;
-    Class cls = object_getClass(object);
-    while (cls) {
+static id TOWXV11ObjectIvarV2(id object, const char *name) {
+    if (!object || !name) return nil;
+    for (Class cls = object_getClass(object); cls; cls = class_getSuperclass(cls)) {
         Ivar ivar = class_getInstanceVariable(cls, name);
-        if (ivar) {
-            const char *type = ivar_getTypeEncoding(ivar);
-            if (type && type[0] == '@') return object_getIvar(object, ivar);
-            return nil;
-        }
-        cls = class_getSuperclass(cls);
+        if (!ivar) continue;
+        const char *type = ivar_getTypeEncoding(ivar);
+        if (!type || type[0] != '@') return nil;
+        @try { return object_getIvar(object, ivar); }
+        @catch (__unused NSException *exception) { return nil; }
     }
     return nil;
 }
 
-static void TOWXV11AddCandidate(NSMutableArray *candidates, id value, NSInteger score, NSString *source) {
+static void TOWXV11AddCandidateV2(NSMutableArray *out, id value, NSInteger score, NSString *path, NSString *source) {
     if (![value isKindOfClass:[NSString class]]) return;
     NSString *bundle = [(NSString *)value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!TOWXV11InstalledBundle(bundle)) return;
-    [candidates addObject:@{ @"bundle": bundle, @"score": @(score), @"source": source ?: @"?" }];
+    if (!TOWXV11InstalledBundleV2(bundle)) return;
+    [out addObject:@{ @"bundle": bundle, @"score": @(score), @"path": path ?: @"?", @"source": source ?: @"?" }];
 }
 
-static void TOWXV11ProbeFocusedObject(id object, NSString *path, NSMutableArray *candidates) {
-    if (!object) return;
-    NSArray *selectors = @[@"bundleID", @"applicationBundleID", @"bundleIdentifier", @"embeddedApplicationIdentifier", @"applicationIdentifier", @"displayIdentifier"];
-    NSInteger score = 120;
-    for (NSString *name in selectors) {
-        TOWXV11AddCandidate(candidates, TOWXV11Getter(object, name), score--, [path stringByAppendingFormat:@".%@", name]);
-    }
-    TOWXV11AddCandidate(candidates, TOWXV11ObjectIvarFinal(object, "_bundleID"), 119, [path stringByAppendingString:@"._bundleID"]);
-    TOWXV11AddCandidate(candidates, TOWXV11ObjectIvarFinal(object, "_applicationBundleID"), 118, [path stringByAppendingString:@"._applicationBundleID"]);
-}
-
-static void TOWXV11LogRelevantMethodsOnce(id object, NSString *path) {
-    if (!object || gVerboseProbeLogged) return;
+static void TOWXV11LogRelevantMethodsV2(id object, NSString *path) {
+    if (!object || gMethodDiagnosticsLogged) return;
     NSUInteger emitted = 0;
-    Class cls = [object class];
-    while (cls && emitted < 20) {
+    for (Class cls = [object class]; cls && emitted < 24; cls = class_getSuperclass(cls)) {
         unsigned int count = 0;
         Method *methods = class_copyMethodList(cls, &count);
-        for (unsigned int i = 0; i < count && emitted < 20; i++) {
+        for (unsigned int i = 0; i < count && emitted < 24; i++) {
             NSString *name = NSStringFromSelector(method_getName(methods[i]));
             NSString *lower = name.lowercaseString;
-            if ([lower containsString:@"bundle"] || [lower containsString:@"application"] || [lower containsString:@"host"] || [lower containsString:@"scene"]) {
-                TOWXV11DiagLog("SESSION", "METHOD|path=%s|class=%s|selector=%s", path.UTF8String ?: "?", NSStringFromClass(cls).UTF8String ?: "?", name.UTF8String ?: "?");
-                emitted++;
-            }
+            if (![lower containsString:@"bundle"] && ![lower containsString:@"application"] && ![lower containsString:@"host"] && ![lower containsString:@"scene"] && ![lower containsString:@"split"]) continue;
+            TOWXV11DiagLog("SESSION", "METHOD|path=%s|class=%s|selector=%s", path.UTF8String ?: "?", NSStringFromClass(cls).UTF8String ?: "?", name.UTF8String ?: "?");
+            emitted++;
         }
         free(methods);
-        cls = class_getSuperclass(cls);
     }
+    gMethodDiagnosticsLogged = YES;
 }
 
-static NSString *TOWXV11ResolveBundleFinal(UIWindow *window) {
-    NSMutableArray *candidates = [NSMutableArray array];
-    NSMutableArray *objects = [NSMutableArray array];
-    if (window) [objects addObject:@[window, @"window"]];
-    if (window.rootViewController) [objects addObject:@[window.rootViewController, @"root"]];
+static NSString *TOWXV11ResolveBundleV2(UIWindow *window, NSString **sourceOut) {
+    if (!window) return nil;
+    static NSArray<NSDictionary *> *stringSelectors = nil;
+    static NSArray<NSString *> *objectSelectors = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        stringSelectors = @[
+            @{@"name":@"splitBundleID", @"score":@150},
+            @{@"name":@"bundleID", @"score":@140},
+            @{@"name":@"applicationBundleID", @"score":@135},
+            @{@"name":@"bundleIdentifier", @"score":@130},
+            @{@"name":@"embeddedApplicationIdentifier", @"score":@125},
+            @{@"name":@"applicationIdentifier", @"score":@120},
+            @{@"name":@"displayIdentifier", @"score":@90},
+            @{@"name":@"swipeSelectedBundleID", @"score":@70}
+        ];
+        objectSelectors = @[
+            @"rootViewController", @"presentedViewController", @"parentViewController", @"childViewControllers", @"children",
+            @"floatingHostViewController", @"hostViewController", @"floatingWindow", @"currentVisibleFloatingWindow",
+            @"application", @"targetApplication", @"clientApplication", @"scene", @"applicationScene", @"sceneHandle",
+            @"applicationSceneHandle", @"owningScene", @"windowScene", @"pipSceneHandle"
+        ];
+    });
 
-    NSArray *bridgeSelectors = @[@"floatingHostViewController", @"hostViewController", @"floatingWindow", @"currentVisibleFloatingWindow", @"application", @"targetApplication", @"clientApplication", @"presentedViewController"];
-    NSArray *roots = [objects copy];
-    for (NSArray *pair in roots) {
-        id object = pair[0];
-        NSString *path = pair[1];
-        for (NSString *selector in bridgeSelectors) {
-            id child = TOWXV11Getter(object, selector);
-            if (child && child != object) [objects addObject:@[child, [path stringByAppendingFormat:@".%@", selector]]];
+    NSMutableArray<NSDictionary *> *candidates = [NSMutableArray array];
+    NSMutableArray<NSDictionary *> *queue = [NSMutableArray arrayWithObject:@{ @"object": window, @"path": @"window", @"depth": @0 }];
+    NSMutableSet<NSValue *> *visited = [NSMutableSet set];
+    NSUInteger cursor = 0;
+    const NSUInteger maxObjects = 40;
+
+    while (cursor < queue.count && cursor < maxObjects) {
+        NSDictionary *item = queue[cursor++];
+        id object = item[@"object"];
+        NSString *path = item[@"path"];
+        NSUInteger depth = [item[@"depth"] unsignedIntegerValue];
+        if (!object) continue;
+
+        if ([object isKindOfClass:[NSArray class]]) {
+            NSUInteger idx = 0;
+            for (id child in (NSArray *)object) {
+                if (idx >= 10 || queue.count >= maxObjects) break;
+                [queue addObject:@{ @"object": child, @"path": [path stringByAppendingFormat:@"[%lu]", (unsigned long)idx], @"depth": @(depth) }];
+                idx++;
+            }
+            continue;
         }
-    }
 
-    NSUInteger limit = MIN(objects.count, (NSUInteger)18);
-    for (NSUInteger i = 0; i < limit; i++) {
-        NSArray *pair = objects[i];
-        TOWXV11ProbeFocusedObject(pair[0], pair[1], candidates);
+        NSValue *pointer = [NSValue valueWithPointer:(__bridge const void *)(object)];
+        if ([visited containsObject:pointer]) continue;
+        [visited addObject:pointer];
+
+        for (NSDictionary *descriptor in stringSelectors) {
+            NSString *name = descriptor[@"name"];
+            TOWXV11AddCandidateV2(candidates, TOWXV11SafeGetterV2(object, name), [descriptor[@"score"] integerValue], path, name);
+        }
+        TOWXV11AddCandidateV2(candidates, TOWXV11ObjectIvarV2(object, "_bundleID"), 145, path, @"ivar:_bundleID");
+        TOWXV11AddCandidateV2(candidates, TOWXV11ObjectIvarV2(object, "_applicationBundleID"), 136, path, @"ivar:_applicationBundleID");
+
+        if (depth >= 3) continue;
+        for (NSString *name in objectSelectors) {
+            if (queue.count >= maxObjects) break;
+            id child = TOWXV11SafeGetterV2(object, name);
+            if (!child || child == object) continue;
+            [queue addObject:@{ @"object": child, @"path": [path stringByAppendingFormat:@".%@", name], @"depth": @(depth + 1) }];
+        }
     }
 
     NSDictionary *best = nil;
-    for (NSDictionary *candidate in candidates) if (!best || [candidate[@"score"] integerValue] > [best[@"score"] integerValue]) best = candidate;
-    if (best) {
-        TOWXV11DiagLog("SESSION", "BUNDLE|bundle=%s|source=%s|score=%ld", [best[@"bundle"] UTF8String] ?: "?", [best[@"source"] UTF8String] ?: "?", (long)[best[@"score"] integerValue]);
-        return best[@"bundle"];
+    for (NSDictionary *candidate in candidates) {
+        if (!best || [candidate[@"score"] integerValue] > [best[@"score"] integerValue]) best = candidate;
+    }
+    if (!best) {
+        if (sourceOut) *sourceOut = @"unresolved";
+        TOWXV11DiagLog("SESSION", "BUNDLE|bundle=?|source=unresolved|objects=%lu|windowClass=%s|rootClass=%s",
+                       (unsigned long)visited.count,
+                       NSStringFromClass(window.class).UTF8String ?: "?",
+                       NSStringFromClass(window.rootViewController.class).UTF8String ?: "?");
+        TOWXV11LogRelevantMethodsV2(window, @"window");
+        return nil;
     }
 
-    TOWXV11DiagLog("SESSION", "BUNDLE|bundle=?|source=unresolved|windowClass=%s|rootClass=%s", NSStringFromClass(window.class).UTF8String ?: "?", NSStringFromClass(window.rootViewController.class).UTF8String ?: "?");
-    TOWXV11LogRelevantMethodsOnce(window, @"window");
-    TOWXV11LogRelevantMethodsOnce(window.rootViewController, @"root");
-    gVerboseProbeLogged = YES;
-    return nil;
+    NSString *bundle = best[@"bundle"];
+    NSString *source = [NSString stringWithFormat:@"%@:%@", best[@"path"] ?: @"?", best[@"source"] ?: @"?"];
+    if (sourceOut) *sourceOut = source;
+    TOWXV11DiagLog("SESSION", "BUNDLE|bundle=%s|source=%s|score=%ld|objects=%lu",
+                   bundle.UTF8String ?: "?", source.UTF8String ?: "?", (long)[best[@"score"] integerValue], (unsigned long)visited.count);
+    return bundle;
 }
 
 UIWindow *TOWXV11CurrentSessionWindow(void) { return gSessionWindow; }
 NSString *TOWXV11CurrentSessionBundleIdentifier(void) { return gSessionBundleID; }
 uint64_t TOWXV11CurrentSessionEpoch(void) { return gSessionEpoch; }
-BOOL TOWXV11SessionIsVisible(void) { return gSessionVisible && TOWXV11UsableSessionWindow(gSessionWindow); }
+BOOL TOWXV11SessionIsVisible(void) { return gSessionVisible && TOWXV11SessionUsableV2(gSessionWindow); }
 BOOL TOWXV11SessionIsWeChat(void) { return [gSessionBundleID isEqualToString:TOWXV11_WECHAT_BUNDLE]; }
 UIInterfaceOrientation TOWXV11CurrentSessionOrientation(void) { return gSessionOrientation; }
 
-static void TOWXV11Publish(NSNotificationName name, UIWindow *window) {
+static void TOWXV11PublishV2(NSNotificationName name, UIWindow *window) {
     [[NSNotificationCenter defaultCenter] postNotificationName:name object:window userInfo:@{
         @"epoch": @(gSessionEpoch), @"visible": @(gSessionVisible), @"bundleID": gSessionBundleID ?: @"", @"orientation": @(gSessionOrientation)
     }];
@@ -196,48 +235,61 @@ void TOWXV11RefreshSession(const char *reason) {
         return;
     }
 
-    UIWindow *window = TOWXV11FindSessionFinal();
+    UIWindow *window = TOWXV11FindSessionV2();
     UIWindow *previous = gSessionWindow;
     if (!window) {
         if (gSessionVisible || previous) {
             TOWXV11DiagLog("SESSION", "END|epoch=%llu|reason=%s|window=%p|bundle=%s", (unsigned long long)gSessionEpoch, reason ?: "?", previous, gSessionBundleID.UTF8String ?: "?");
             gSessionVisible = NO; gSessionWindow = nil; gSessionBundleID = nil; gSessionOrientation = UIInterfaceOrientationUnknown;
-            TOWXV11Publish(TOWXV11SessionDidEndNotification, previous);
+            TOWXV11PublishV2(TOWXV11SessionDidEndNotification, previous);
         }
         return;
     }
 
     BOOL newSession = previous != window || !gSessionVisible;
     if (newSession) {
-        gSessionWindow = window; gSessionVisible = YES; gSessionEpoch += 1;
-        gSessionOrientation = TOWXV11OrientationFinal(window);
-        gUnresolvedWatchdogTicks = 0; gVerboseProbeLogged = NO;
-        gSessionBundleID = [TOWXV11ResolveBundleFinal(window) copy];
-        TOWXV11DiagLog("SESSION", "BEGIN|epoch=%llu|reason=%s|window=%p|class=%s|level=%.1f|frame={{%.1f,%.1f},{%.1f,%.1f}}", (unsigned long long)gSessionEpoch, reason ?: "?", window, NSStringFromClass(window.class).UTF8String ?: "?", window.windowLevel, window.frame.origin.x, window.frame.origin.y, window.frame.size.width, window.frame.size.height);
+        gSessionWindow = window; gSessionVisible = YES; gSessionEpoch += 1; gBundleProbeTick = 0; gMethodDiagnosticsLogged = NO;
+        gSessionOrientation = TOWXV11OrientationV2(window);
+        NSString *source = nil;
+        gSessionBundleID = [TOWXV11ResolveBundleV2(window, &source) copy];
+        TOWXV11DiagLog("SESSION", "BEGIN|epoch=%llu|reason=%s|window=%p|class=%s|level=%.1f|frame={{%.1f,%.1f},{%.1f,%.1f}}",
+                       (unsigned long long)gSessionEpoch, reason ?: "?", window, NSStringFromClass(window.class).UTF8String ?: "?", window.windowLevel,
+                       window.frame.origin.x, window.frame.origin.y, window.frame.size.width, window.frame.size.height);
         TOWXV11DiagLog("SESSION", "ORIENTATION|epoch=%llu|value=%ld", (unsigned long long)gSessionEpoch, (long)gSessionOrientation);
-        TOWXV11Publish(TOWXV11SessionDidBeginNotification, window);
+        TOWXV11PublishV2(TOWXV11SessionDidBeginNotification, window);
         return;
     }
 
     BOOL changed = NO;
-    UIInterfaceOrientation orientation = TOWXV11OrientationFinal(window);
+    UIInterfaceOrientation orientation = TOWXV11OrientationV2(window);
     if (orientation != gSessionOrientation) {
         gSessionOrientation = orientation; changed = YES;
         TOWXV11DiagLog("SESSION", "ORIENTATION|epoch=%llu|value=%ld|reason=%s", (unsigned long long)gSessionEpoch, (long)orientation, reason ?: "?");
     }
 
-    if (!gSessionBundleID.length) {
-        BOOL allowRetry = !(reason && strcmp(reason, "watchdog") == 0);
-        if (!allowRetry) { gUnresolvedWatchdogTicks += 1; allowRetry = (gUnresolvedWatchdogTicks % 3U) == 0U; }
-        if (allowRetry) {
-            NSString *bundle = TOWXV11ResolveBundleFinal(window);
-            if (bundle.length) { gSessionBundleID = [bundle copy]; changed = YES; }
+    BOOL watchdog = reason && strcmp(reason, "watchdog") == 0;
+    gBundleProbeTick += 1;
+    BOOL probeBundle = !watchdog || !gSessionBundleID.length || (gBundleProbeTick % 2U) == 0U;
+    if (probeBundle) {
+        NSString *source = nil;
+        NSString *bundle = TOWXV11ResolveBundleV2(window, &source);
+        BOOL bundleChanged = (bundle.length || gSessionBundleID.length) && ![(bundle ?: @"") isEqualToString:(gSessionBundleID ?: @"")];
+        if (bundleChanged) {
+            NSString *old = gSessionBundleID ?: @"";
+            gSessionBundleID = [bundle copy];
+            changed = YES;
+            TOWXV11DiagLog("SESSION", "BUNDLE-CHANGE|epoch=%llu|old=%s|new=%s|source=%s|reason=%s",
+                           (unsigned long long)gSessionEpoch,
+                           old.length ? old.UTF8String : "?",
+                           gSessionBundleID.length ? gSessionBundleID.UTF8String : "?",
+                           source.UTF8String ?: "?", reason ?: "?");
         }
     }
-    if (changed) TOWXV11Publish(TOWXV11SessionDidChangeNotification, window);
+
+    if (changed) TOWXV11PublishV2(TOWXV11SessionDidChangeNotification, window);
 }
 
-static void TOWXV11InstallSessionObserversFinal(void) {
+static void TOWXV11InstallSessionObserversV2(void) {
     NSNotificationCenter *c = NSNotificationCenter.defaultCenter;
     [c addObserverForName:UIWindowDidBecomeVisibleNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n) { TOWXV11RefreshSession("window-visible"); }];
     [c addObserverForName:UIWindowDidBecomeHiddenNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n) { TOWXV11RefreshSession("window-hidden"); }];
@@ -245,18 +297,18 @@ static void TOWXV11InstallSessionObserversFinal(void) {
     [c addObserverForName:UISceneWillDeactivateNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n) { TOWXV11RefreshSession("scene-deactivate"); }];
 }
 
-static void TOWXV11StartSessionWatchdogFinal(void) {
+static void TOWXV11StartSessionWatchdogV2(void) {
     gSessionWatchdog = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
     dispatch_source_set_timer(gSessionWatchdog, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), 2 * NSEC_PER_SEC, NSEC_PER_SEC / 5);
     dispatch_source_set_event_handler(gSessionWatchdog, ^{ TOWXV11RefreshSession("watchdog"); });
     dispatch_resume(gSessionWatchdog);
 }
 
-__attribute__((constructor)) static void TOWXV11SessionControllerFinalInit(void) {
-    TOWXV11DiagLog("SESSION", "LOADED|Smooth1-FINAL|focused-bundle-probe+2s-watchdog");
+__attribute__((constructor)) static void TOWXV11SessionControllerV2Init(void) {
+    TOWXV11DiagLog("SESSION", "LOADED|Smooth1-FINAL2|bundle-bfs+splitBundleID+bundle-change-detect+2s-watchdog");
     dispatch_async(dispatch_get_main_queue(), ^{
-        TOWXV11InstallSessionObserversFinal();
+        TOWXV11InstallSessionObserversV2();
         TOWXV11RefreshSession("constructor");
-        TOWXV11StartSessionWatchdogFinal();
+        TOWXV11StartSessionWatchdogV2();
     });
 }
