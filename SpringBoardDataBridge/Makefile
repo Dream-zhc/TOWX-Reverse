@@ -10,7 +10,7 @@ TOWXSpringBoardDataBridge_FILES = \
     TOWXV11SessionControllerFinal.m \
     TOWXV11WindowFollower.m \
     TOWXV11PlacementEngine.m \
-    TOWXV11AvatarView.m \
+    TOWXV11AvatarViewFinal.m \
     TOWXV11AnimationController.m \
     TOWXV11Gate.m \
     TOWXV11DataController.m \
