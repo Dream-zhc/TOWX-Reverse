@@ -1,12 +1,32 @@
 #import "TOWXV11AvatarView.h"
 #import "TOWXV11Diagnostics.h"
 
+#include <math.h>
+
 static const NSUInteger kTOWXV11MaxAvatarsFix3 = 15;
 static const CGFloat kTOWXV11AvatarDiameterFix3 = 44.0;
-static const CGFloat kTOWXV11SpacingFix3 = 7.0;
+static const CGFloat kTOWXV11BaseSpacingFix3 = 7.0;
 static const CGFloat kTOWXV11PaddingFix3 = 5.0;
 static const CGFloat kTOWXV11EdgeShieldFix3 = 7.0;
-static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
+static const CGFloat kTOWXV11VisualGapFix3 = 8.0;
+
+static NSUInteger TOWXCompleteSlots(CGFloat viewport, CGFloat padding, CGFloat diameter, CGFloat baseSpacing) {
+    CGFloat usable = MAX(0.0, viewport - padding * 2.0);
+    if (usable < diameter) return 1;
+    NSUInteger slots = (NSUInteger)floor((usable + baseSpacing) / (diameter + baseSpacing));
+    return MAX((NSUInteger)1, slots);
+}
+
+static CGFloat TOWXResolvedSpacing(CGFloat viewport,
+                                   CGFloat padding,
+                                   CGFloat diameter,
+                                   CGFloat baseSpacing,
+                                   NSUInteger visibleSlots) {
+    if (visibleSlots <= 1) return baseSpacing;
+    CGFloat usable = MAX(0.0, viewport - padding * 2.0);
+    CGFloat spacing = (usable - diameter * visibleSlots) / (CGFloat)(visibleSlots - 1);
+    return MAX(baseSpacing, spacing);
+}
 
 @interface TOWXV11AvatarScrollViewFix3 : UIScrollView
 @end
@@ -74,9 +94,8 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
         self.layer.borderWidth = selected ? 2.1 : 0.75;
         self.layer.borderColor = (selected ? UIColor.systemGreenColor : [UIColor colorWithWhite:0.72 alpha:0.55]).CGColor;
     };
-    if (!animated) {
-        changes();
-    } else {
+    if (!animated) changes();
+    else {
         [UIView animateWithDuration:0.16
                               delay:0.0
              usingSpringWithDamping:0.88
@@ -96,6 +115,7 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
 @property (nonatomic, assign) CGFloat lastLoggedRange;
 @property (nonatomic, assign) BOOL lastLoggedVertical;
 @property (nonatomic, assign) NSUInteger lastLoggedCount;
+@property (nonatomic, assign) NSUInteger lastLoggedSlots;
 @end
 
 @implementation TOWXV11AvatarView
@@ -109,6 +129,7 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
     _selectedIndex = NSNotFound;
     _lastLoggedRange = -1.0;
     _lastLoggedCount = NSNotFound;
+    _lastLoggedSlots = NSNotFound;
 
     _internalScrollView = [[TOWXV11AvatarScrollViewFix3 alloc] initWithFrame:self.bounds];
     _internalScrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -144,7 +165,7 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
     }
     _cells = cells;
     _currentImages = @[];
-    TOWXV11DiagLog("AVATAR", "VIEW-CREATE|fix=3|diameter=44|gap=5|edgeShield=7|physics=0.996|cells=%lu",
+    TOWXV11DiagLog("AVATAR", "VIEW-CREATE|fix=5|diameter=44|baseSpacing=7|visibleGap=8|edgeShield=7|physics=0.996|cells=%lu",
                    (unsigned long)kTOWXV11MaxAvatarsFix3);
     return self;
 }
@@ -156,7 +177,7 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
     _vertical = vertical;
     [self.internalScrollView setContentOffset:CGPointZero animated:NO];
     [self refreshLayoutPreservingOffset:NO];
-    TOWXV11DiagLog("AVATAR", "AXIS|fix=3|value=%s", vertical ? "vertical" : "horizontal");
+    TOWXV11DiagLog("AVATAR", "AXIS|fix=5|value=%s", vertical ? "vertical" : "horizontal");
 }
 
 - (void)setSelectedIndex:(NSInteger)selectedIndex {
@@ -203,14 +224,17 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
     if (width < 2.0 || height < 2.0) return;
 
     CGFloat diameter = kTOWXV11AvatarDiameterFix3;
-    CGFloat spacing = kTOWXV11SpacingFix3;
     CGFloat padding = kTOWXV11PaddingFix3;
     CGFloat edgeShield = kTOWXV11EdgeShieldFix3;
     CGFloat visualGap = kTOWXV11VisualGapFix3;
-    CGFloat total = self.avatarCount ? diameter * self.avatarCount + spacing * (self.avatarCount - 1) : 0.0;
     CGPoint oldOffset = scroll.contentOffset;
+    NSUInteger slots = 1;
+    CGFloat resolvedSpacing = kTOWXV11BaseSpacingFix3;
 
     if (self.vertical) {
+        slots = MIN(MAX((NSUInteger)1, TOWXCompleteSlots(height, padding, diameter, kTOWXV11BaseSpacingFix3)), MAX((NSUInteger)1, self.avatarCount));
+        resolvedSpacing = TOWXResolvedSpacing(height, padding, diameter, kTOWXV11BaseSpacingFix3, slots);
+        CGFloat total = self.avatarCount ? diameter * self.avatarCount + resolvedSpacing * (self.avatarCount - 1) : 0.0;
         CGFloat contentHeight = MAX(height, total + padding * 2.0);
         CGFloat x = edgeShield + visualGap;
         if (x + diameter > width) x = MAX(0.0, width - diameter - padding);
@@ -218,9 +242,12 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
         scroll.alwaysBounceVertical = contentHeight > height + 0.5;
         scroll.alwaysBounceHorizontal = NO;
         for (NSUInteger i = 0; i < self.avatarCount; i++) {
-            self.cells[i].frame = CGRectMake(x, padding + i * (diameter + spacing), diameter, diameter);
+            self.cells[i].frame = CGRectMake(x, padding + i * (diameter + resolvedSpacing), diameter, diameter);
         }
     } else {
+        slots = MIN(MAX((NSUInteger)1, TOWXCompleteSlots(width, padding, diameter, kTOWXV11BaseSpacingFix3)), MAX((NSUInteger)1, self.avatarCount));
+        resolvedSpacing = TOWXResolvedSpacing(width, padding, diameter, kTOWXV11BaseSpacingFix3, slots);
+        CGFloat total = self.avatarCount ? diameter * self.avatarCount + resolvedSpacing * (self.avatarCount - 1) : 0.0;
         CGFloat contentWidth = MAX(width, total + padding * 2.0);
         CGFloat y = edgeShield + visualGap;
         if (y + diameter > height) y = MAX(0.0, height - diameter - padding);
@@ -228,7 +255,7 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
         scroll.alwaysBounceHorizontal = contentWidth > width + 0.5;
         scroll.alwaysBounceVertical = NO;
         for (NSUInteger i = 0; i < self.avatarCount; i++) {
-            self.cells[i].frame = CGRectMake(padding + i * (diameter + spacing), y, diameter, diameter);
+            self.cells[i].frame = CGRectMake(padding + i * (diameter + resolvedSpacing), y, diameter, diameter);
         }
     }
 
@@ -242,45 +269,49 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
     }
 
     CGFloat range = self.vertical ? MAX(0.0, scroll.contentSize.height - height) : MAX(0.0, scroll.contentSize.width - width);
-    if (fabs(range - self.lastLoggedRange) > 0.5 || self.lastLoggedVertical != self.vertical || self.lastLoggedCount != self.avatarCount) {
+    if (fabs(range - self.lastLoggedRange) > 0.5 || self.lastLoggedVertical != self.vertical ||
+        self.lastLoggedCount != self.avatarCount || self.lastLoggedSlots != slots) {
         self.lastLoggedRange = range;
         self.lastLoggedVertical = self.vertical;
         self.lastLoggedCount = self.avatarCount;
-        TOWXV11DiagLog("AVATAR", "LAYOUT|fix=3|axis=%s|count=%lu|viewport=%.1f|content=%.1f|range=%.1f|diameter=44|gap=5|edgeShield=7",
+        self.lastLoggedSlots = slots;
+        TOWXV11DiagLog("AVATAR", "LAYOUT|fix=5|axis=%s|count=%lu|viewport=%.1f|content=%.1f|range=%.1f|diameter=44|slots=%lu|spacing=%.2f|visibleGap=8",
                        self.vertical ? "vertical" : "horizontal",
                        (unsigned long)self.avatarCount,
                        self.vertical ? height : width,
                        self.vertical ? scroll.contentSize.height : scroll.contentSize.width,
-                       range);
+                       range,
+                       (unsigned long)slots,
+                       resolvedSpacing);
     }
 }
 
 - (void)cellTapped:(TOWXV11AvatarCellFix3 *)cell {
     if (cell.avatarIndex >= self.avatarCount) return;
-    TOWXV11DiagLog("AVATAR", "TAP|fix=3|index=%lu|axis=%s", (unsigned long)cell.avatarIndex, self.vertical ? "vertical" : "horizontal");
+    TOWXV11DiagLog("AVATAR", "TAP|fix=5|index=%lu|axis=%s", (unsigned long)cell.avatarIndex, self.vertical ? "vertical" : "horizontal");
     if (self.tapHandler) self.tapHandler(cell.avatarIndex);
 }
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
     for (TOWXV11AvatarCellFix3 *cell in self.cells) cell.highlighted = NO;
     CGFloat range = self.vertical ? MAX(0.0, scrollView.contentSize.height - scrollView.bounds.size.height) : MAX(0.0, scrollView.contentSize.width - scrollView.bounds.size.width);
-    TOWXV11DiagLog("AVATAR", "SCROLL-BEGIN|fix=3|axis=%s|range=%.1f|velocity={%.2f,%.2f}",
+    TOWXV11DiagLog("AVATAR", "SCROLL-BEGIN|fix=5|axis=%s|range=%.1f|velocity={%.2f,%.2f}",
                    self.vertical ? "vertical" : "horizontal", range,
                    [scrollView.panGestureRecognizer velocityInView:scrollView].x,
                    [scrollView.panGestureRecognizer velocityInView:scrollView].y);
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
-    TOWXV11DiagLog("AVATAR", "SCROLL-DRAG-END|fix=3|decelerate=%d|offset={%.1f,%.1f}", decelerate ? 1 : 0, scrollView.contentOffset.x, scrollView.contentOffset.y);
+    TOWXV11DiagLog("AVATAR", "SCROLL-DRAG-END|fix=5|decelerate=%d|offset={%.1f,%.1f}", decelerate ? 1 : 0, scrollView.contentOffset.x, scrollView.contentOffset.y);
     if (!decelerate && self.layoutPending) [self refreshLayoutPreservingOffset:YES];
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
-    TOWXV11DiagLog("AVATAR", "SCROLL-END|fix=3|offset={%.1f,%.1f}", scrollView.contentOffset.x, scrollView.contentOffset.y);
+    TOWXV11DiagLog("AVATAR", "SCROLL-END|fix=5|offset={%.1f,%.1f}", scrollView.contentOffset.x, scrollView.contentOffset.y);
     if (self.layoutPending) [self refreshLayoutPreservingOffset:YES];
 }
 @end
 
 __attribute__((constructor)) static void TOWXV11AvatarFix3Marker(void) {
-    TOWXV11DiagLog("AVATAR", "LOADED|Smooth1-FIX3|15-cells+44pt+5pt-gap+smooth-scroll");
+    TOWXV11DiagLog("AVATAR", "LOADED|Smooth1-FIX5|15-cells+44pt+integer-visible-slots+8pt-visual-gap+smooth-scroll");
 }
