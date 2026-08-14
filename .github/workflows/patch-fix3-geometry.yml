@@ -1,0 +1,56 @@
+name: Patch Fix3 Geometry Refinements
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - '.github/workflows/patch-fix3-geometry.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/trollopen-1.4.0-v11-smooth
+      - name: Refine orientation and visible gap
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('SpringBoardDataBridge/TOWXV11WindowFollowerFix3.m')
+          s = p.read_text()
+          old = '''static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {
+    if (UIInterfaceOrientationIsLandscape(orientation)) return YES;
+    if (UIInterfaceOrientationIsPortrait(orientation)) return NO;
+    return CGRectGetWidth(bounds) > CGRectGetHeight(bounds);
+}'''
+          new = '''static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {
+    BOOL byGeometry = CGRectGetWidth(bounds) > CGRectGetHeight(bounds);
+    if (orientation == UIInterfaceOrientationUnknown) return byGeometry;
+    BOOL byOrientation = UIInterfaceOrientationIsLandscape(orientation);
+    return byOrientation == byGeometry ? byOrientation : byGeometry;
+}'''
+          if old not in s:
+              raise SystemExit('follower orientation target not found')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('SpringBoardDataBridge/TOWXV11AvatarViewFix3.m')
+          s = p.read_text()
+          if 'CGFloat x = edgeShield + visualGap + padding;' not in s or 'CGFloat y = edgeShield + visualGap + padding;' not in s:
+              raise SystemExit('avatar gap targets not found')
+          s = s.replace('CGFloat x = edgeShield + visualGap + padding;', 'CGFloat x = edgeShield + visualGap;', 1)
+          s = s.replace('CGFloat y = edgeShield + visualGap + padding;', 'CGFloat y = edgeShield + visualGap;', 1)
+          p.write_text(s)
+          PY
+      - name: Commit refinements
+        run: |
+          git config user.name 'Dream-zhc Actions'
+          git config user.email '83204117+Dream-zhc@users.noreply.github.com'
+          git add SpringBoardDataBridge/TOWXV11WindowFollowerFix3.m SpringBoardDataBridge/TOWXV11AvatarViewFix3.m
+          git commit -m 'fix: trust scene geometry and keep visible avatar gap at 5pt'
+          git push origin HEAD:test/trollopen-1.4.0-v11-smooth
