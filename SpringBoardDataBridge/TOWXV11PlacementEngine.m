@@ -3,15 +3,13 @@
 #include <math.h>
 
 static CGRect TOWXV11SafeRect(CGRect screenBounds, UIEdgeInsets insets) {
-    CGFloat margin = 8.0;
+    CGFloat margin = 6.0;
     UIEdgeInsets expanded = UIEdgeInsetsMake(insets.top + margin,
                                              insets.left + margin,
                                              insets.bottom + margin,
                                              insets.right + margin);
     CGRect rect = UIEdgeInsetsInsetRect(screenBounds, expanded);
-    if (CGRectGetWidth(rect) < 80.0 || CGRectGetHeight(rect) < 80.0) {
-        rect = CGRectInset(screenBounds, margin, margin);
-    }
+    if (CGRectGetWidth(rect) < 80.0 || CGRectGetHeight(rect) < 80.0) rect = CGRectInset(screenBounds, margin, margin);
     return rect;
 }
 
@@ -49,29 +47,31 @@ TOWXV11AvatarPlacement TOWXV11ComputeAvatarPlacement(CGRect sessionRect,
     if (CGRectIsNull(sessionRect) || CGRectIsEmpty(sessionRect) ||
         CGRectGetWidth(sessionRect) < 40.0 || CGRectGetHeight(sessionRect) < 40.0 ||
         CGRectGetWidth(screenBounds) < 100.0 || CGRectGetHeight(screenBounds) < 100.0 ||
-        avatarCount == 0) {
-        return result;
-    }
+        avatarCount == 0) return result;
 
     CGRect safeRect = TOWXV11SafeRect(screenBounds, safeInsets);
     NSUInteger count = MIN(avatarCount, (NSUInteger)6);
     CGFloat diameter = 52.0;
-    CGFloat spacing = 10.0;
-    CGFloat padding = 8.0;
+    CGFloat spacing = 8.0;
+    CGFloat padding = 6.0;
     CGFloat contentLength = diameter * (CGFloat)count + spacing * (CGFloat)(count > 0 ? count - 1 : 0) + padding * 2.0;
     BOOL landscape = TOWXV11OrientationIsLandscape(orientation, screenBounds);
 
     if (!landscape) {
-        CGFloat height = 64.0;
+        CGFloat height = 62.0;
         CGFloat maxWidth = CGRectGetWidth(safeRect);
-        CGFloat preferredWidth = MIN(contentLength, MAX(72.0, CGRectGetWidth(sessionRect) * 0.95));
-        CGFloat width = MIN(maxWidth, MAX(72.0, preferredWidth));
-        CGFloat gap = 10.0;
+        /* Keep roughly 4.6 avatars visible when there are 5/6 items, otherwise there is no scroll range. */
+        CGFloat scrollViewportCap = diameter * 4.6 + spacing * 4.0 + padding * 2.0;
+        CGFloat sessionViewport = MAX(176.0, CGRectGetWidth(sessionRect) * 0.94);
+        CGFloat viewportLimit = MIN(maxWidth, MIN(scrollViewportCap, sessionViewport));
+        CGFloat width = MIN(contentLength, viewportLimit);
+        width = MIN(maxWidth, MAX(72.0, width));
+        CGFloat gap = 6.0;
         CGFloat x = CGRectGetMidX(sessionRect) - width * 0.5;
         x = TOWXV11Clamp(x, CGRectGetMinX(safeRect), CGRectGetMaxX(safeRect) - width);
 
         CGFloat bottomY = CGRectGetMaxY(sessionRect) + gap;
-        BOOL bottomFits = bottomY + height <= CGRectGetMaxY(safeRect);
+        BOOL bottomFits = bottomY + height <= CGRectGetMaxY(safeRect) + 0.5;
         if (bottomFits) {
             result.frame = CGRectMake(x, bottomY, width, height);
             result.mode = TOWXV11AvatarPlacementBottom;
@@ -80,7 +80,7 @@ TOWXV11AvatarPlacement TOWXV11ComputeAvatarPlacement(CGRect sessionRect,
         }
 
         CGFloat topY = CGRectGetMinY(sessionRect) - gap - height;
-        BOOL topFits = topY >= CGRectGetMinY(safeRect);
+        BOOL topFits = topY >= CGRectGetMinY(safeRect) - 0.5;
         if (topFits) {
             result.frame = CGRectMake(x, topY, width, height);
             result.mode = TOWXV11AvatarPlacementTop;
@@ -97,16 +97,19 @@ TOWXV11AvatarPlacement TOWXV11ComputeAvatarPlacement(CGRect sessionRect,
         return result;
     }
 
-    CGFloat width = 64.0;
+    CGFloat width = 62.0;
     CGFloat maxHeight = CGRectGetHeight(safeRect);
-    CGFloat preferredHeight = MIN(contentLength, MAX(72.0, CGRectGetHeight(sessionRect) * 0.95));
-    CGFloat height = MIN(maxHeight, MAX(72.0, preferredHeight));
-    CGFloat gap = 12.0;
+    CGFloat scrollViewportCap = diameter * 4.6 + spacing * 4.0 + padding * 2.0;
+    CGFloat sessionViewport = MAX(176.0, CGRectGetHeight(sessionRect) * 0.94);
+    CGFloat viewportLimit = MIN(maxHeight, MIN(scrollViewportCap, sessionViewport));
+    CGFloat height = MIN(contentLength, viewportLimit);
+    height = MIN(maxHeight, MAX(72.0, height));
+    CGFloat gap = 8.0;
     CGFloat y = CGRectGetMidY(sessionRect) - height * 0.5;
     y = TOWXV11Clamp(y, CGRectGetMinY(safeRect), CGRectGetMaxY(safeRect) - height);
 
     CGFloat rightX = CGRectGetMaxX(sessionRect) + gap;
-    BOOL rightFits = rightX + width <= CGRectGetMaxX(safeRect);
+    BOOL rightFits = rightX + width <= CGRectGetMaxX(safeRect) + 0.5;
     if (rightFits) {
         result.frame = CGRectMake(rightX, y, width, height);
         result.mode = TOWXV11AvatarPlacementRight;
@@ -115,7 +118,7 @@ TOWXV11AvatarPlacement TOWXV11ComputeAvatarPlacement(CGRect sessionRect,
     }
 
     CGFloat leftX = CGRectGetMinX(sessionRect) - gap - width;
-    BOOL leftFits = leftX >= CGRectGetMinX(safeRect);
+    BOOL leftFits = leftX >= CGRectGetMinX(safeRect) - 0.5;
     if (leftFits) {
         result.frame = CGRectMake(leftX, y, width, height);
         result.mode = TOWXV11AvatarPlacementLeft;
