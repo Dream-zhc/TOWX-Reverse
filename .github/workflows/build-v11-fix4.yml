@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: towx-v11-fix4-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-14
@@ -81,6 +85,7 @@ jobs:
           strings "$DYLIB" | grep -Fq 'TABLE-DISCOVERY|v11'
           strings "$DYLIB" | grep -Fq 'STANDALONE-MISSING|v11|fallback=table-discovery'
           strings "$DYLIB" | grep -Fq 'DIRECT-SWITCH-SUCCESS'
+          strings "$DYLIB" | grep -Fq '%Y-%m-%d %H:%M:%S'
           file "$DYLIB"
           cp "$DYLIB" ../out-fix4/wx/TOWXGoldenAdapter.dylib
           shasum -a 256 "$DYLIB" > ../out-fix4/wx/SHA256SUMS.txt
