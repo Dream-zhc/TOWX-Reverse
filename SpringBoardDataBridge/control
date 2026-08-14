@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.sbdatabridge
 Name: TOWX SpringBoard V11 Smooth
-Version: 0.11.6-smooth1-fix6
+Version: 0.11.6-smooth1-fix6b
 Architecture: iphoneos-arm64e
-Description: TOWX V11 Smooth Fix6 for TrollOpen 1.4.0 with keyboard/avatar mutual exclusion, immediate keyboard hard-hide, notification plus keyboard-window fallback detection, Fix5 landscape rail recovery, exact 95-percent portrait width, complete visible avatar slots, 8-point visual spacing, 15-avatar smooth scrolling, readable local-time diagnostics, minimize hard-hide, host WeChat gating, and background avatar decoding.
+Description: TOWX V11 Smooth Fix6b for TrollOpen 1.4.0 with keyboard/avatar mutual exclusion, strict keyboard geometry validation, full-screen input-host rejection, authoritative keyboard hide reset, Fix5 landscape rail recovery, exact 95-percent portrait width, complete visible avatar slots, 8-point visual spacing, 15-avatar smooth scrolling, readable local-time diagnostics, minimize hard-hide, host WeChat gating, and background avatar decoding.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
