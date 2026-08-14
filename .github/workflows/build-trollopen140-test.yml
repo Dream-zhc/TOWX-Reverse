@@ -1,0 +1,72 @@
+name: Build TrollOpen 1.4.0 TOWX V10 Anchor Test
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v10-anchor
+    paths:
+      - 'SpringBoardDataBridge/**'
+      - '.github/workflows/build-trollopen140-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build V10 plus TrollOpen 1.4 anchor
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          mkdir -p ../out140
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          cp "$DEB" ../out140/TOWX-SpringBoard-V10-TrollOpen140-Anchor.deb
+          dpkg-deb -x "$DEB" ../out140/extracted
+          DYLIB="$(find ../out140/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          test -n "$DYLIB"
+          strings "$DYLIB" | grep -Fq 'TOWX|SB|140ANCHOR|LOADED'
+          strings "$DYLIB" | grep -Fq 'TOWX|SB|P2A4|LOADED|v0.10.0'
+          cp "$DYLIB" ../out140/TOWXSpringBoardDataBridge.dylib
+          cp "$(find ../out140/extracted -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)" ../out140/TOWXSpringBoardDataBridge.plist
+          shasum -a 256 ../out140/TOWXSpringBoardDataBridge.dylib > ../out140/SHA256SUMS.txt
+
+      - name: Upload bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-V10-TrollOpen140-Anchor-Test
+          path: |
+            out140/TOWX-SpringBoard-V10-TrollOpen140-Anchor.deb
+            out140/TOWXSpringBoardDataBridge.dylib
+            out140/TOWXSpringBoardDataBridge.plist
+            out140/SHA256SUMS.txt
