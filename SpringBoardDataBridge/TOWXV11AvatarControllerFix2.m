@@ -10,6 +10,7 @@
 #import "TOWXV11DataController.h"
 #import "TOWXV11Gate.h"
 #import "TOWXV11HostContext.h"
+#import "TOWXV11KeyboardState.h"
 #import "TOWXV11Diagnostics.h"
 
 @interface TOWXV11OverlayRootControllerFix2 : UIViewController
@@ -53,8 +54,9 @@ static BOOL TOWXFrameUsable(CGRect frame) {
 }
 
 static CGRect TOWXScreenBounds(UIWindow *session) {
+    if (session.screen) return session.screen.coordinateSpace.bounds;
     if (session.windowScene) return session.windowScene.coordinateSpace.bounds;
-    return session.screen ? session.screen.bounds : UIScreen.mainScreen.bounds;
+    return UIScreen.mainScreen.coordinateSpace.bounds;
 }
 
 static TOWXV11AvatarPlacement TOWXPlacementForRect(CGRect visualRect) {
@@ -132,7 +134,7 @@ static void TOWXHardHideOverlay(const char *reason) {
     if (gAvatarView) gAvatarView.userInteractionEnabled = NO;
     if (gOverlayWindow && !gOverlayWindow.hidden) {
         gOverlayWindow.hidden = YES;
-        TOWXV11DiagLog("OVERLAY", "HARD-HIDE|fix=2|reason=%s|serial=%llu",
+        TOWXV11DiagLog("OVERLAY", "HARD-HIDE|fix=6|reason=%s|serial=%llu",
                        reason ?: "?", (unsigned long long)gVisibilitySerial);
     }
 }
@@ -177,7 +179,7 @@ static void TOWXEnsureOverlay(UIWindow *session) {
     gAnimationController = [[TOWXV11AnimationController alloc] initWithView:avatarView];
     gPlacementMode = TOWXV11AvatarPlacementHidden;
     gLastPlacementFrame = CGRectZero;
-    TOWXV11DiagLog("OVERLAY", "CREATE|fix=2|window=%p|scene=%p|level=%.1f|edgeShield=10", window, session.windowScene, window.windowLevel);
+    TOWXV11DiagLog("OVERLAY", "CREATE|fix=6|window=%p|scene=%p|level=%.1f|edgeShield=10", window, session.windowScene, window.windowLevel);
 }
 
 static void TOWXApplyData(BOOL animated) {
@@ -199,18 +201,20 @@ static void TOWXLogGate(BOOL show, const char *reason) {
     gLastGateHost = [host copy];
     gLastGateReason = [r copy];
     gLastGateCount = count;
-    TOWXV11DiagLog("GATE", "STATE|fix=2|show=%d|reason=%s|session=%s|host=%s|hostSource=%s|wechatActive=%d|count=%lu|epoch=%llu",
+    TOWXV11DiagLog("GATE", "STATE|fix=6|show=%d|reason=%s|session=%s|host=%s|hostSource=%s|wechatActive=%d|keyboard=%d|keyboardSource=%s|count=%lu|epoch=%llu",
                    show ? 1 : 0, reason ?: "?",
                    session.length ? session.UTF8String : "?",
                    host.length ? host.UTF8String : "?",
                    TOWXV11HostBundleSource().UTF8String ?: "?",
                    TOWXV11DataWeChatActive() ? 1 : 0,
+                   TOWXV11KeyboardVisible() ? 1 : 0,
+                   TOWXV11KeyboardSource().UTF8String ?: "?",
                    (unsigned long)count,
                    (unsigned long long)TOWXV11CurrentSessionEpoch());
 }
 
 static void TOWXShowAtRect(CGRect visualRect, BOOL tracking, BOOL animateIfHidden, const char *reason) {
-    if (!gShouldShow || !TOWXFrameUsable(visualRect)) return;
+    if (!gShouldShow || TOWXV11KeyboardVisible() || !TOWXFrameUsable(visualRect)) return;
     UIWindow *session = TOWXV11CurrentSessionWindow();
     if (!session) return;
     TOWXEnsureOverlay(session);
@@ -226,7 +230,7 @@ static void TOWXShowAtRect(CGRect visualRect, BOOL tracking, BOOL animateIfHidde
         gAvatarView.userInteractionEnabled = YES;
         if (animateIfHidden) [gAnimationController showFromPlacementMode:placement.mode completion:nil];
         else [gAnimationController setVisibleImmediately];
-        TOWXV11DiagLog("OVERLAY", "SHOW|fix=2|reason=%s|mode=%s|anchor={{%.1f,%.1f},{%.1f,%.1f}}|frame={{%.1f,%.1f},{%.1f,%.1f}}|edgeShield=10",
+        TOWXV11DiagLog("OVERLAY", "SHOW|fix=6|reason=%s|mode=%s|anchor={{%.1f,%.1f},{%.1f,%.1f}}|frame={{%.1f,%.1f},{%.1f,%.1f}}|edgeShield=10",
                        reason ?: "?", TOWXV11PlacementModeName(placement.mode),
                        visualRect.origin.x, visualRect.origin.y, visualRect.size.width, visualRect.size.height,
                        placement.frame.origin.x, placement.frame.origin.y, placement.frame.size.width, placement.frame.size.height);
@@ -248,6 +252,10 @@ static void TOWXSyncController(const char *reason) {
                                               TOWXV11DataWeChatActive(),
                                               TOWXV11DataAvatarCount(),
                                               &gateReason);
+    if (TOWXV11SessionIsVisible() && TOWXV11KeyboardVisible()) {
+        show = NO;
+        gateReason = "keyboard-visible";
+    }
     TOWXLogGate(show, gateReason);
     gShouldShow = show;
     gVisibilitySerial += 1;
@@ -255,6 +263,10 @@ static void TOWXSyncController(const char *reason) {
 
     if (!show || !session) {
         TOWXV11FollowerSetEnabled(NO);
+        if (TOWXV11KeyboardVisible()) {
+            TOWXHardHideOverlay("keyboard-visible");
+            return;
+        }
         if (!session || (reason && strcmp(reason, "session-end") == 0)) {
             TOWXHardHideOverlay(reason ?: "session-gone");
             return;
@@ -263,7 +275,7 @@ static void TOWXSyncController(const char *reason) {
             [gAnimationController hideTowardPlacementMode:gPlacementMode completion:^(BOOL finished) {
                 if (!finished || serial != gVisibilitySerial || gShouldShow) return;
                 gOverlayWindow.hidden = YES;
-                TOWXV11DiagLog("OVERLAY", "HIDDEN|fix=2|reason=%s|serial=%llu", reason ?: "?", (unsigned long long)serial);
+                TOWXV11DiagLog("OVERLAY", "HIDDEN|fix=6|reason=%s|serial=%llu", reason ?: "?", (unsigned long long)serial);
             }];
         }
         return;
@@ -273,12 +285,11 @@ static void TOWXSyncController(const char *reason) {
     TOWXApplyData(YES);
     gOverlayWindow.windowLevel = session.windowLevel + 2.0;
 
-    /* Start geometry first. Never place from session.frame: wrong geometry is worse than waiting a frame. */
     TOWXV11FollowerSetEnabled(YES);
     CGRect visualRect = TOWXV11FollowerCurrentVisualRect();
     if (!TOWXFrameUsable(visualRect)) {
         TOWXHardHideOverlay("visual-not-ready");
-        TOWXV11DiagLog("OVERLAY", "WAIT-GEOMETRY|fix=2|reason=%s|policy=fail-closed", reason ?: "?");
+        TOWXV11DiagLog("OVERLAY", "WAIT-GEOMETRY|fix=6|reason=%s|policy=fail-closed", reason ?: "?");
         return;
     }
     TOWXShowAtRect(visualRect, NO, YES, reason ?: "sync");
@@ -288,10 +299,12 @@ static void TOWXInstallObservers(void) {
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center addObserverForName:TOWXV11SessionDidBeginNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
         TOWXV11RefreshHostContext("session-begin");
+        TOWXV11KeyboardRefresh("session-begin");
         TOWXSyncController("session-begin");
     }];
     [center addObserverForName:TOWXV11SessionDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
         TOWXV11RefreshHostContext("session-change");
+        TOWXV11KeyboardRefresh("session-change");
         TOWXSyncController("session-change");
     }];
     [center addObserverForName:TOWXV11SessionDidEndNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
@@ -305,22 +318,27 @@ static void TOWXInstallObservers(void) {
     [center addObserverForName:TOWXV11HostContextDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
         TOWXSyncController("host-change");
     }];
+    [center addObserverForName:TOWXV11KeyboardStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXSyncController("keyboard-state");
+    }];
 }
 
 __attribute__((constructor)) static void TOWXV11AvatarControllerFix2Init(void) {
-    TOWXV11DiagLog("PRODUCT", "LOADED|Smooth1-FIX2|flush-edge+44pt-scroll+fail-closed-geometry+minimize-hard-hide");
+    TOWXV11DiagLog("PRODUCT", "LOADED|Smooth1-FIX6|keyboard-avatar-mutual-exclusion+hard-hide+fix5-layout");
     dispatch_async(dispatch_get_main_queue(), ^{
+        TOWXV11KeyboardStartObserving();
         TOWXInstallObservers();
         TOWXV11FollowerSetUpdateHandler(^(CGRect visualRect, BOOL tracking) {
-            if (!gShouldShow) return;
+            if (!gShouldShow || TOWXV11KeyboardVisible()) return;
             if (!TOWXFrameUsable(visualRect)) {
                 TOWXHardHideOverlay("follower-visual-lost");
                 return;
             }
             TOWXShowAtRect(visualRect, tracking, YES, tracking ? "follower-tracking" : "follower-stable");
         });
-        TOWXV11RefreshHostContext("v11-fix2-init");
-        TOWXV11RefreshSession("v11-fix2-init");
+        TOWXV11RefreshHostContext("v11-fix6-init");
+        TOWXV11RefreshSession("v11-fix6-init");
+        TOWXV11KeyboardRefresh("v11-fix6-init");
         TOWXSyncController("constructor");
     });
 }
