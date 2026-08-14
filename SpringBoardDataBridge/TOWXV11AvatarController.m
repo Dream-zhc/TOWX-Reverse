@@ -9,6 +9,7 @@
 #import "TOWXV11AnimationController.h"
 #import "TOWXV11DataController.h"
 #import "TOWXV11Gate.h"
+#import "TOWXV11HostContext.h"
 #import "TOWXV11Diagnostics.h"
 
 @interface TOWXV11OverlayRootController : UIViewController
@@ -39,6 +40,8 @@ static BOOL gShouldShow = NO;
 static uint64_t gVisibilitySerial = 0;
 static BOOL gLastGateShow = NO;
 static NSString *gLastGateBundle = nil;
+static NSString *gLastGateHostBundle = nil;
+static NSString *gLastGateHostSource = nil;
 static NSString *gLastGateReason = nil;
 static NSUInteger gLastGateCount = NSNotFound;
 
@@ -129,11 +132,8 @@ static void TOWXV11ApplyPlacement(TOWXV11AvatarPlacement placement, BOOL trackin
 
     BOOL frameChanged = !CGRectEqualToRect(gLastPlacementFrame, placement.frame);
     if (!frameChanged) return;
-    if (modeChanged && allowAnimatedModeChange && !gOverlayWindow.hidden) {
-        TOWXV11SetOverlayFrameAnimated(placement.frame, placement.mode);
-    } else {
-        TOWXV11SetOverlayFrameDirect(placement.frame);
-    }
+    if (modeChanged && allowAnimatedModeChange && !gOverlayWindow.hidden) TOWXV11SetOverlayFrameAnimated(placement.frame, placement.mode);
+    else TOWXV11SetOverlayFrameDirect(placement.frame);
 }
 
 static void TOWXV11DestroyOverlay(void) {
@@ -173,9 +173,7 @@ static void TOWXV11EnsureOverlay(UIWindow *session) {
     TOWXV11AvatarView *avatarView = [[TOWXV11AvatarView alloc] initWithFrame:root.view.bounds];
     avatarView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [root.view addSubview:avatarView];
-    avatarView.tapHandler = ^(NSUInteger index) {
-        TOWXV11DataSendOpen(index);
-    };
+    avatarView.tapHandler = ^(NSUInteger index) { TOWXV11DataSendOpen(index); };
 
     gOverlayWindow = window;
     gAvatarView = avatarView;
@@ -195,18 +193,25 @@ static void TOWXV11ApplyDataToAvatarView(BOOL animated) {
 
 static void TOWXV11LogGateIfChanged(BOOL show, const char *reason) {
     NSString *bundle = TOWXV11CurrentSessionBundleIdentifier() ?: @"";
+    NSString *hostBundle = TOWXV11HostBundleIdentifier() ?: @"";
+    NSString *hostSource = TOWXV11HostBundleSource() ?: @"unresolved";
     NSString *reasonString = reason ? [NSString stringWithUTF8String:reason] : @"?";
     NSUInteger count = TOWXV11DataAvatarCount();
     if (gLastGateShow == show && [gLastGateBundle isEqualToString:bundle] &&
+        [gLastGateHostBundle isEqualToString:hostBundle] && [gLastGateHostSource isEqualToString:hostSource] &&
         [gLastGateReason isEqualToString:reasonString] && gLastGateCount == count) return;
     gLastGateShow = show;
     gLastGateBundle = [bundle copy];
+    gLastGateHostBundle = [hostBundle copy];
+    gLastGateHostSource = [hostSource copy];
     gLastGateReason = [reasonString copy];
     gLastGateCount = count;
-    TOWXV11DiagLog("GATE", "STATE|show=%d|reason=%s|bundle=%s|active=%d|count=%lu|epoch=%llu",
+    TOWXV11DiagLog("GATE", "STATE|show=%d|reason=%s|session=%s|host=%s|hostSource=%s|wechatActive=%d|count=%lu|epoch=%llu",
                    show ? 1 : 0,
                    reason ?: "?",
                    bundle.length ? bundle.UTF8String : "?",
+                   hostBundle.length ? hostBundle.UTF8String : "?",
+                   hostSource.UTF8String ?: "?",
                    TOWXV11DataWeChatActive() ? 1 : 0,
                    (unsigned long)count,
                    (unsigned long long)TOWXV11CurrentSessionEpoch());
@@ -223,6 +228,7 @@ static void TOWXV11SyncController(const char *reason) {
     const char *gateReason = NULL;
     BOOL show = TOWXV11ShouldShowAvatarModule(TOWXV11SessionIsVisible(),
                                               TOWXV11CurrentSessionBundleIdentifier(),
+                                              TOWXV11HostBundleIdentifier(),
                                               TOWXV11DataWeChatActive(),
                                               TOWXV11DataAvatarCount(),
                                               &gateReason);
@@ -248,6 +254,7 @@ static void TOWXV11SyncController(const char *reason) {
     TOWXV11EnsureOverlay(session);
     if (!gOverlayWindow || !gAvatarView) return;
     gOverlayWindow.windowLevel = session.windowLevel + 2.0;
+    gAvatarView.userInteractionEnabled = YES;
     TOWXV11ApplyDataToAvatarView(YES);
 
     CGRect visualRect = TOWXV11FollowerCurrentVisualRect();
@@ -259,9 +266,10 @@ static void TOWXV11SyncController(const char *reason) {
     BOOL wasHidden = gOverlayWindow.hidden;
     if (wasHidden) gOverlayWindow.hidden = NO;
     TOWXV11FollowerSetEnabled(YES);
-    TOWXV11DiagLog("OVERLAY", "SHOW-REQUEST|reason=%s|serial=%llu|mode=%s|frame={{%.1f,%.1f},{%.1f,%.1f}}",
+    TOWXV11DiagLog("OVERLAY", "SHOW-REQUEST|reason=%s|serial=%llu|mode=%s|anchor={{%.1f,%.1f},{%.1f,%.1f}}|frame={{%.1f,%.1f},{%.1f,%.1f}}",
                    reason ?: "?", (unsigned long long)serial,
                    TOWXV11PlacementModeName(placement.mode),
+                   visualRect.origin.x, visualRect.origin.y, visualRect.size.width, visualRect.size.height,
                    placement.frame.origin.x, placement.frame.origin.y,
                    placement.frame.size.width, placement.frame.size.height);
     [gAnimationController showFromPlacementMode:placement.mode completion:^(BOOL finished) {
@@ -273,22 +281,28 @@ static void TOWXV11SyncController(const char *reason) {
 static void TOWXV11InstallObservers(void) {
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center addObserverForName:TOWXV11SessionDidBeginNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXV11RefreshHostContext("session-begin");
         TOWXV11SyncController("session-begin");
     }];
     [center addObserverForName:TOWXV11SessionDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXV11RefreshHostContext("session-change");
         TOWXV11SyncController("session-change");
     }];
     [center addObserverForName:TOWXV11SessionDidEndNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXV11RefreshHostContext("session-end");
         TOWXV11SyncController("session-end");
     }];
     [center addObserverForName:TOWXV11DataDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
         TOWXV11ApplyDataToAvatarView(YES);
         TOWXV11SyncController("data-change");
     }];
+    [center addObserverForName:TOWXV11HostContextDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXV11SyncController("host-change");
+    }];
 }
 
 __attribute__((constructor)) static void TOWXV11AvatarControllerInit(void) {
-    TOWXV11DiagLog("PRODUCT", "LOADED|Smooth1-FINAL|overlay-window+follower+placement+native-scroll+interruptible-anim+wechat-gate+bg-decode");
+    TOWXV11DiagLog("PRODUCT", "LOADED|Smooth1-FIX1|real-visual-anchor+scroll-viewport+host-wechat-gate");
     dispatch_async(dispatch_get_main_queue(), ^{
         TOWXV11InstallObservers();
         TOWXV11FollowerSetUpdateHandler(^(CGRect visualRect, BOOL tracking) {
@@ -297,6 +311,7 @@ __attribute__((constructor)) static void TOWXV11AvatarControllerInit(void) {
             if (placement.mode == TOWXV11AvatarPlacementHidden) return;
             TOWXV11ApplyPlacement(placement, tracking, !tracking);
         });
+        TOWXV11RefreshHostContext("v11-product-init");
         TOWXV11RefreshSession("v11-product-init");
         TOWXV11SyncController("constructor");
     });
