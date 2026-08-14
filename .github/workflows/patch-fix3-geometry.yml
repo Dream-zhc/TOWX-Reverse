@@ -19,34 +19,8 @@ jobs:
           ref: test/trollopen-1.4.0-v11-smooth
       - name: Refine orientation and visible gap
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path('SpringBoardDataBridge/TOWXV11WindowFollowerFix3.m')
-          s = p.read_text()
-          old = '''static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {
-    if (UIInterfaceOrientationIsLandscape(orientation)) return YES;
-    if (UIInterfaceOrientationIsPortrait(orientation)) return NO;
-    return CGRectGetWidth(bounds) > CGRectGetHeight(bounds);
-}'''
-          new = '''static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {
-    BOOL byGeometry = CGRectGetWidth(bounds) > CGRectGetHeight(bounds);
-    if (orientation == UIInterfaceOrientationUnknown) return byGeometry;
-    BOOL byOrientation = UIInterfaceOrientationIsLandscape(orientation);
-    return byOrientation == byGeometry ? byOrientation : byGeometry;
-}'''
-          if old not in s:
-              raise SystemExit('follower orientation target not found')
-          p.write_text(s.replace(old, new, 1))
-
-          p = Path('SpringBoardDataBridge/TOWXV11AvatarViewFix3.m')
-          s = p.read_text()
-          if 'CGFloat x = edgeShield + visualGap + padding;' not in s or 'CGFloat y = edgeShield + visualGap + padding;' not in s:
-              raise SystemExit('avatar gap targets not found')
-          s = s.replace('CGFloat x = edgeShield + visualGap + padding;', 'CGFloat x = edgeShield + visualGap;', 1)
-          s = s.replace('CGFloat y = edgeShield + visualGap + padding;', 'CGFloat y = edgeShield + visualGap;', 1)
-          p.write_text(s)
-          PY
+          python3 -c "from pathlib import Path; p=Path('SpringBoardDataBridge/TOWXV11WindowFollowerFix3.m'); s=p.read_text(); old='static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {\\n    if (UIInterfaceOrientationIsLandscape(orientation)) return YES;\\n    if (UIInterfaceOrientationIsPortrait(orientation)) return NO;\\n    return CGRectGetWidth(bounds) > CGRectGetHeight(bounds);\\n}'; new='static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {\\n    BOOL byGeometry = CGRectGetWidth(bounds) > CGRectGetHeight(bounds);\\n    if (orientation == UIInterfaceOrientationUnknown) return byGeometry;\\n    BOOL byOrientation = UIInterfaceOrientationIsLandscape(orientation);\\n    return byOrientation == byGeometry ? byOrientation : byGeometry;\\n}'; assert old in s; p.write_text(s.replace(old,new,1))"
+          python3 -c "from pathlib import Path; p=Path('SpringBoardDataBridge/TOWXV11AvatarViewFix3.m'); s=p.read_text(); assert 'CGFloat x = edgeShield + visualGap + padding;' in s and 'CGFloat y = edgeShield + visualGap + padding;' in s; s=s.replace('CGFloat x = edgeShield + visualGap + padding;', 'CGFloat x = edgeShield + visualGap;',1).replace('CGFloat y = edgeShield + visualGap + padding;', 'CGFloat y = edgeShield + visualGap;',1); p.write_text(s)"
       - name: Commit refinements
         run: |
           git config user.name 'Dream-zhc Actions'
