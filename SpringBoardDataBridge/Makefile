@@ -8,6 +8,7 @@ TWEAK_NAME = TOWXSpringBoardDataBridge
 TOWXSpringBoardDataBridge_FILES = \
     TOWXV11Diagnostics.m \
     TOWXV11SessionControllerFinal.m \
+    TOWXV11HostContext.m \
     TOWXV11WindowFollower.m \
     TOWXV11PlacementEngine.m \
     TOWXV11AvatarViewFinal.m \
