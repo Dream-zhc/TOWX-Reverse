@@ -1,0 +1,81 @@
+name: Build TrollOpen 1.4.0 TOWX V11 Smooth
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - 'SpringBoardDataBridge/**'
+      - '.github/workflows/build-trollopen140-v11.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build V11 Smooth bridge
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+
+          mkdir -p ../out-v11
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          cp "$DEB" ../out-v11/TOWX-SpringBoard-V11-S1-Session.deb
+          dpkg-deb -x "$DEB" ../out-v11/extracted
+
+          DYLIB="$(find ../out-v11/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          PLIST="$(find ../out-v11/extracted -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
+          test -n "$DYLIB"
+          test -n "$PLIST"
+
+          strings "$DYLIB" | grep -Fq 'TOWX|SB|P2A4|LOADED|v0.10.0'
+          strings "$DYLIB" | grep -Fq 'TOWX|SB|140ANCHOR|LOADED'
+          strings "$DYLIB" | grep -Fq 'TOWX|SB|V11|LOADED|Smooth1-S1|SESSION-CONTROLLER'
+
+          cp "$DYLIB" ../out-v11/TOWXSpringBoardDataBridge.dylib
+          cp "$PLIST" ../out-v11/TOWXSpringBoardDataBridge.plist
+          file ../out-v11/TOWXSpringBoardDataBridge.dylib
+          shasum -a 256 ../out-v11/TOWXSpringBoardDataBridge.dylib > ../out-v11/SHA256SUMS.txt
+
+      - name: Upload V11 S1 bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-V11-S1-Session
+          path: |
+            out-v11/TOWX-SpringBoard-V11-S1-Session.deb
+            out-v11/TOWXSpringBoardDataBridge.dylib
+            out-v11/TOWXSpringBoardDataBridge.plist
+            out-v11/SHA256SUMS.txt
