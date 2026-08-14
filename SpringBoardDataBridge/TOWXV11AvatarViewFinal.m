@@ -83,6 +83,9 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
 @property (nonatomic, assign) NSUInteger avatarCount;
 @property (nonatomic, strong) NSArray *currentImages;
 @property (nonatomic, assign) BOOL layoutPending;
+@property (nonatomic, assign) CGFloat lastLoggedScrollRange;
+@property (nonatomic, assign) BOOL lastLoggedVertical;
+@property (nonatomic, assign) NSUInteger lastLoggedCount;
 @end
 
 @implementation TOWXV11AvatarView
@@ -93,6 +96,8 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
     self.opaque = NO;
     self.clipsToBounds = NO;
     _selectedIndex = NSNotFound;
+    _lastLoggedScrollRange = -1.0;
+    _lastLoggedCount = NSNotFound;
     _internalScrollView = [[UIScrollView alloc] initWithFrame:self.bounds];
     _internalScrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _internalScrollView.backgroundColor = UIColor.clearColor;
@@ -100,6 +105,8 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
     _internalScrollView.clipsToBounds = YES;
     _internalScrollView.showsHorizontalScrollIndicator = NO;
     _internalScrollView.showsVerticalScrollIndicator = NO;
+    _internalScrollView.scrollEnabled = YES;
+    _internalScrollView.panGestureRecognizer.enabled = YES;
     _internalScrollView.directionalLockEnabled = YES;
     _internalScrollView.delaysContentTouches = NO;
     _internalScrollView.canCancelContentTouches = YES;
@@ -120,7 +127,7 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
     }
     _cells = cells;
     _currentImages = @[];
-    TOWXV11DiagLog("AVATAR", "VIEW-CREATE|physics=native|bounce=on|cells=%lu", (unsigned long)kTOWXV11MaxAvatars);
+    TOWXV11DiagLog("AVATAR", "VIEW-CREATE|physics=native|bounce=on|pan=on|cells=%lu", (unsigned long)kTOWXV11MaxAvatars);
     return self;
 }
 - (UIScrollView *)scrollView { return self.internalScrollView; }
@@ -151,7 +158,11 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
         [cell applyImage:image selected:(_selectedIndex == (NSInteger)i) animated:animated];
     }
 }
-- (void)layoutSubviews { [super layoutSubviews]; self.internalScrollView.frame = self.bounds; [self refreshLayoutPreservingOffset:YES]; }
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    self.internalScrollView.frame = self.bounds;
+    [self refreshLayoutPreservingOffset:YES];
+}
 - (void)refreshLayoutPreservingOffset:(BOOL)preserveOffset {
     UIScrollView *scroll = self.internalScrollView;
     if (scroll.tracking || scroll.dragging || scroll.decelerating) { self.layoutPending = YES; return; }
@@ -159,7 +170,7 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
     CGFloat width = CGRectGetWidth(self.bounds), height = CGRectGetHeight(self.bounds);
     if (width < 2.0 || height < 2.0) return;
     CGFloat diameter = MIN(52.0, MAX(42.0, (self.vertical ? width : height) - 10.0));
-    CGFloat spacing = 10.0, padding = 6.0;
+    CGFloat spacing = 8.0, padding = 6.0;
     CGFloat total = self.avatarCount ? diameter * self.avatarCount + spacing * (self.avatarCount - 1) : 0.0;
     CGFloat viewportLength = self.vertical ? height : width;
     CGFloat contentLength = MAX(viewportLength, total + padding * 2.0);
@@ -180,13 +191,36 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
         CGFloat maxX = MAX(0.0, scroll.contentSize.width - width), maxY = MAX(0.0, scroll.contentSize.height - height);
         scroll.contentOffset = CGPointMake(MIN(MAX(oldOffset.x, 0.0), maxX), MIN(MAX(oldOffset.y, 0.0), maxY));
     } else scroll.contentOffset = CGPointZero;
+
+    CGFloat scrollRange = self.vertical ? MAX(0.0, contentLength - height) : MAX(0.0, contentLength - width);
+    if (fabs(scrollRange - self.lastLoggedScrollRange) > 0.5 || self.lastLoggedVertical != self.vertical || self.lastLoggedCount != self.avatarCount) {
+        self.lastLoggedScrollRange = scrollRange;
+        self.lastLoggedVertical = self.vertical;
+        self.lastLoggedCount = self.avatarCount;
+        TOWXV11DiagLog("AVATAR", "LAYOUT|axis=%s|count=%lu|viewport=%.1f|content=%.1f|range=%.1f|scrollEnabled=%d|panEnabled=%d",
+                       self.vertical ? "vertical" : "horizontal",
+                       (unsigned long)self.avatarCount,
+                       viewportLength,
+                       contentLength,
+                       scrollRange,
+                       scroll.scrollEnabled ? 1 : 0,
+                       scroll.panGestureRecognizer.enabled ? 1 : 0);
+    }
 }
 - (void)cellTapped:(TOWXV11AvatarCellFinal *)cell {
     if (cell.avatarIndex >= self.avatarCount) return;
     TOWXV11DiagLog("AVATAR", "TAP|index=%lu|axis=%s", (unsigned long)cell.avatarIndex, self.vertical ? "vertical" : "horizontal");
     if (self.tapHandler) self.tapHandler(cell.avatarIndex);
 }
-- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView { TOWXV11DiagLog("AVATAR", "SCROLL-BEGIN|axis=%s|offset={%.2f,%.2f}", self.vertical ? "vertical" : "horizontal", scrollView.contentOffset.x, scrollView.contentOffset.y); }
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
+    TOWXV11DiagLog("AVATAR", "SCROLL-BEGIN|axis=%s|offset={%.2f,%.2f}|range=%.1f",
+                   self.vertical ? "vertical" : "horizontal",
+                   scrollView.contentOffset.x, scrollView.contentOffset.y,
+                   self.vertical ? MAX(0.0, scrollView.contentSize.height - scrollView.bounds.size.height) : MAX(0.0, scrollView.contentSize.width - scrollView.bounds.size.width));
+}
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView {
+    if (!scrollView.tracking) return;
+}
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
     TOWXV11DiagLog("AVATAR", "SCROLL-DRAG-END|decelerate=%d|offset={%.2f,%.2f}", decelerate ? 1 : 0, scrollView.contentOffset.x, scrollView.contentOffset.y);
     if (!decelerate && self.layoutPending) [self refreshLayoutPreservingOffset:YES];
@@ -198,5 +232,5 @@ static const NSUInteger kTOWXV11MaxAvatars = 6;
 @end
 
 __attribute__((constructor)) static void TOWXV11AvatarViewFinalMarker(void) {
-    TOWXV11DiagLog("AVATAR", "LOADED|Smooth1-S4|native-scroll+uicontrol+weak-animator");
+    TOWXV11DiagLog("AVATAR", "LOADED|Smooth1-FIX1|native-scroll+uicontrol+forced-range-diagnostics");
 }
