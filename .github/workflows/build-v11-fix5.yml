@@ -1,0 +1,74 @@
+name: Build TOWX V11 Smooth Fix5
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - 'SpringBoardDataBridge/**'
+      - '.github/workflows/build-v11-fix5.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 25
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build SpringBoard Fix5
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          mkdir -p ../out-fix5
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          cp "$DEB" ../out-fix5/TOWX-SpringBoard-V11-Smooth1-Fix5.deb
+          dpkg-deb -x "$DEB" ../out-fix5/extracted
+          DYLIB="$(find ../out-fix5/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          test -n "$DYLIB"
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX5|host-wechat-hard-hide|floating-wechat-active-signal-optional'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX5|portraitWidth=95pct|visibleGap=8|edgeShield=7|landscape=right-only|avatars=15'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX5|15-cells+44pt+integer-visible-slots+8pt-visual-gap+smooth-scroll'
+          strings "$DYLIB" | grep -Fq '%Y-%m-%d %H:%M:%S'
+          file "$DYLIB"
+          cp "$DYLIB" ../out-fix5/TOWXSpringBoardDataBridge.dylib
+          shasum -a 256 "$DYLIB" > ../out-fix5/SHA256SUMS.txt
+
+      - name: Upload Fix5
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-V11-Smooth1-Fix5
+          path: |
+            out-fix5/TOWX-SpringBoard-V11-Smooth1-Fix5.deb
+            out-fix5/TOWXSpringBoardDataBridge.dylib
+            out-fix5/SHA256SUMS.txt
