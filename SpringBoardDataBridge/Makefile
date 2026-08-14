@@ -9,6 +9,7 @@ TOWXSpringBoardDataBridge_FILES = \
     TOWXV11Diagnostics.m \
     TOWXV11SessionControllerFinal.m \
     TOWXV11HostContext.m \
+    TOWXV11KeyboardState.m \
     TOWXV11WindowFollowerFix3.m \
     TOWXV11PlacementEngineFix3b.m \
     TOWXV11AvatarViewFix3.m \
