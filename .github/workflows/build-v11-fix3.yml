@@ -24,16 +24,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install build tools
         run: brew install dpkg ldid
-
       - name: Install RootHide Theos
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
           git -C "$THEOS" submodule update --init --recursive --depth 1
-
       - name: Bind Xcode iPhoneOS SDK
         run: |
           set -euo pipefail
@@ -42,7 +39,6 @@ jobs:
           mkdir -p "$THEOS/sdks"
           ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
           echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
-
       - name: Build SpringBoard Fix3
         working-directory: SpringBoardDataBridge
         run: |
@@ -58,13 +54,12 @@ jobs:
           DYLIB="$(find ../out-fix3/sb/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
           test -n "$DYLIB"
           strings "$DYLIB" | grep -Fq 'Smooth1-FIX3|rotation-rediscovery+landscape-compact+presentation+displaylink'
-          strings "$DYLIB" | grep -Fq 'Smooth1-FIX3|portraitWidth=95pct|gap=5|edgeShield=7|landscape=right|avatars=15'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FIX3B|portraitWidth=95pct|visibleGap=5|edgeShield=7|landscapeRail=5items|avatars=15'
           strings "$DYLIB" | grep -Fq 'Smooth1-FIX3|15-cells+44pt+5pt-gap+smooth-scroll'
           strings "$DYLIB" | grep -Fq 'Smooth1-FIX3|15-recents+background-imageio'
           file "$DYLIB"
           cp "$DYLIB" ../out-fix3/sb/TOWXSpringBoardDataBridge.dylib
           shasum -a 256 "$DYLIB" > ../out-fix3/sb/SHA256SUMS.txt
-
       - name: Build WeChat Fix3 adapter
         working-directory: WeChatGoldenAdapter
         run: |
@@ -86,7 +81,6 @@ jobs:
           file "$DYLIB"
           cp "$DYLIB" ../out-fix3/wx/TOWXGoldenAdapter.dylib
           shasum -a 256 "$DYLIB" > ../out-fix3/wx/SHA256SUMS.txt
-
       - name: Upload Fix3 bundle
         uses: actions/upload-artifact@v4
         with:
