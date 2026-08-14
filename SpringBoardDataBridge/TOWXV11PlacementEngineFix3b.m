@@ -22,7 +22,6 @@ static BOOL TOWXLandscapeFix3B(UIInterfaceOrientation orientation, CGRect screen
     BOOL byGeometry = CGRectGetWidth(screenBounds) > CGRectGetHeight(screenBounds);
     if (orientation == UIInterfaceOrientationUnknown) return byGeometry;
     BOOL byOrientation = UIInterfaceOrientationIsLandscape(orientation);
-    /* TrollOpen can report the previous interface orientation for one cycle; the scene coordinate space is authoritative for placement. */
     if (byOrientation != byGeometry) return byGeometry;
     return byOrientation;
 }
@@ -49,14 +48,17 @@ TOWXV11AvatarPlacement TOWXV11ComputeAvatarPlacement(CGRect sessionRect,
 
     CGRect safeRect = TOWXSafeRectFix3B(screenBounds, safeInsets);
     BOOL landscape = TOWXLandscapeFix3B(orientation, screenBounds);
-    const CGFloat edgeShield = 7.0;
-    const CGFloat visualGap = 5.0;
+    const CGFloat edgeShield = 7.0;      /* transparent touch shield overlapping TrollOpen edge */
+    const CGFloat visualGap = 8.0;       /* actual visible gap between window chrome and avatar circles */
     const CGFloat diameter = 44.0;
     const CGFloat padding = 5.0;
+    const CGFloat spacing = 7.0;
 
     if (!landscape) {
-        CGFloat width = MIN(CGRectGetWidth(sessionRect) * 0.95, CGRectGetWidth(safeRect));
-        width = MAX(150.0, width);
+        /* Product rule: portrait module is exactly 95% of the current floating-window width when space permits. */
+        CGFloat desiredWidth = CGRectGetWidth(sessionRect) * 0.95;
+        CGFloat width = MIN(desiredWidth, CGRectGetWidth(safeRect));
+        width = MAX(120.0, width);
         CGFloat height = edgeShield + visualGap + diameter + padding * 2.0;
         CGFloat x = TOWXClampFix3B(CGRectGetMidX(sessionRect) - width * 0.5,
                                    CGRectGetMinX(safeRect), CGRectGetMaxX(safeRect) - width);
@@ -69,28 +71,25 @@ TOWXV11AvatarPlacement TOWXV11ComputeAvatarPlacement(CGRect sessionRect,
         return result;
     }
 
+    /* Landscape is always a compact vertical rail on the floating window's right edge. */
     CGFloat width = edgeShield + visualGap + diameter + padding * 2.0;
-    /* Keep about five contacts visible; the remaining contacts are intentionally scrollable. */
-    CGFloat fiveAvatarViewport = diameter * 5.05 + 7.0 * 4.0 + padding * 2.0;
+    CGFloat fiveAvatarViewport = diameter * 5.0 + spacing * 4.0 + padding * 2.0;
     CGFloat height = MIN(CGRectGetHeight(sessionRect) * 0.86, fiveAvatarViewport);
     height = MIN(height, CGRectGetHeight(safeRect));
-    height = MAX(160.0, height);
+    height = MAX(diameter + padding * 2.0, height);
     CGFloat y = TOWXClampFix3B(CGRectGetMidY(sessionRect) - height * 0.5,
                                CGRectGetMinY(safeRect), CGRectGetMaxY(safeRect) - height);
 
     CGFloat rightX = CGRectGetMaxX(sessionRect) - edgeShield;
-    if (rightX + width <= CGRectGetMaxX(screenBounds) + 0.5) {
-        result.frame = CGRectMake(rightX, y, width, height);
-        result.mode = TOWXV11AvatarPlacementRight;
-    } else {
-        CGFloat leftX = MAX(CGRectGetMinX(screenBounds), CGRectGetMinX(sessionRect) - (width - edgeShield));
-        result.frame = CGRectMake(leftX, y, width, height);
-        result.mode = TOWXV11AvatarPlacementLeft;
-    }
+    CGFloat maxX = CGRectGetMaxX(screenBounds) - width;
+    CGFloat x = MIN(rightX, maxX);
+    x = MAX(CGRectGetMinX(screenBounds), x);
+    result.frame = CGRectMake(x, y, width, height);
+    result.mode = TOWXV11AvatarPlacementRight;
     result.vertical = YES;
     return result;
 }
 
 __attribute__((constructor)) static void TOWXV11PlacementFix3BMarker(void) {
-    NSLog(@"TOWX|V11|PLACEMENT|LOADED|Smooth1-FIX3B|portraitWidth=95pct|visibleGap=5|edgeShield=7|landscapeRail=5items|avatars=15");
+    NSLog(@"TOWX|V11|PLACEMENT|LOADED|Smooth1-FIX5|portraitWidth=95pct|visibleGap=8|edgeShield=7|landscape=right-only|avatars=15");
 }
