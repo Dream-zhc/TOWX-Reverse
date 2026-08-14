@@ -1,0 +1,171 @@
+name: Patch V11 Fix6 Keyboard
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - '.github/workflows/patch-v11-fix6-keyboard.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/trollopen-1.4.0-v11-smooth
+
+      - name: Apply keyboard/avatar mutual exclusion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('SpringBoardDataBridge/TOWXV11AvatarControllerFix2.m')
+          s = p.read_text()
+
+          old = '#import "TOWXV11HostContext.h"\n#import "TOWXV11Diagnostics.h"\n'
+          new = '#import "TOWXV11HostContext.h"\n#import "TOWXV11KeyboardState.h"\n#import "TOWXV11Diagnostics.h"\n'
+          if old not in s:
+              raise SystemExit('import target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''static CGRect TOWXScreenBounds(UIWindow *session) {
+    if (session.windowScene) return session.windowScene.coordinateSpace.bounds;
+    return session.screen ? session.screen.bounds : UIScreen.mainScreen.bounds;
+}
+'''
+          new = '''static CGRect TOWXScreenBounds(UIWindow *session) {
+    if (session.screen) return session.screen.coordinateSpace.bounds;
+    if (session.windowScene) return session.windowScene.coordinateSpace.bounds;
+    return UIScreen.mainScreen.coordinateSpace.bounds;
+}
+'''
+          if old in s:
+              s = s.replace(old, new, 1)
+
+          old = '''    TOWXV11DiagLog("GATE", "STATE|fix=2|show=%d|reason=%s|session=%s|host=%s|hostSource=%s|wechatActive=%d|count=%lu|epoch=%llu",
+                   show ? 1 : 0, reason ?: "?",
+                   session.length ? session.UTF8String : "?",
+                   host.length ? host.UTF8String : "?",
+                   TOWXV11HostBundleSource().UTF8String ?: "?",
+                   TOWXV11DataWeChatActive() ? 1 : 0,
+                   (unsigned long)count,
+                   (unsigned long long)TOWXV11CurrentSessionEpoch());
+'''
+          new = '''    TOWXV11DiagLog("GATE", "STATE|fix=6|show=%d|reason=%s|session=%s|host=%s|hostSource=%s|wechatActive=%d|keyboard=%d|keyboardSource=%s|count=%lu|epoch=%llu",
+                   show ? 1 : 0, reason ?: "?",
+                   session.length ? session.UTF8String : "?",
+                   host.length ? host.UTF8String : "?",
+                   TOWXV11HostBundleSource().UTF8String ?: "?",
+                   TOWXV11DataWeChatActive() ? 1 : 0,
+                   TOWXV11KeyboardVisible() ? 1 : 0,
+                   TOWXV11KeyboardSource().UTF8String ?: "?",
+                   (unsigned long)count,
+                   (unsigned long long)TOWXV11CurrentSessionEpoch());
+'''
+          if old not in s:
+              raise SystemExit('gate log target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    BOOL show = TOWXV11ShouldShowAvatarModule(TOWXV11SessionIsVisible(),
+                                              TOWXV11CurrentSessionBundleIdentifier(),
+                                              TOWXV11HostBundleIdentifier(),
+                                              TOWXV11DataWeChatActive(),
+                                              TOWXV11DataAvatarCount(),
+                                              &gateReason);
+    TOWXLogGate(show, gateReason);
+'''
+          new = '''    BOOL show = TOWXV11ShouldShowAvatarModule(TOWXV11SessionIsVisible(),
+                                              TOWXV11CurrentSessionBundleIdentifier(),
+                                              TOWXV11HostBundleIdentifier(),
+                                              TOWXV11DataWeChatActive(),
+                                              TOWXV11DataAvatarCount(),
+                                              &gateReason);
+    /* Product invariant: visible system keyboard and avatar module are mutually exclusive. */
+    if (TOWXV11SessionIsVisible() && TOWXV11KeyboardVisible()) {
+        show = NO;
+        gateReason = "keyboard-visible";
+    }
+    TOWXLogGate(show, gateReason);
+'''
+          if old not in s:
+              raise SystemExit('gate decision target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    if (!show || !session) {
+        TOWXV11FollowerSetEnabled(NO);
+        if (!session || (reason && strcmp(reason, "session-end") == 0)) {
+'''
+          new = '''    if (!show || !session) {
+        TOWXV11FollowerSetEnabled(NO);
+        if (TOWXV11KeyboardVisible()) {
+            TOWXHardHideOverlay("keyboard-visible");
+            return;
+        }
+        if (!session || (reason && strcmp(reason, "session-end") == 0)) {
+'''
+          if old not in s:
+              raise SystemExit('hard hide target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    [center addObserverForName:TOWXV11HostContextDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXSyncController("host-change");
+    }];
+'''
+          new = '''    [center addObserverForName:TOWXV11HostContextDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXSyncController("host-change");
+    }];
+    [center addObserverForName:TOWXV11KeyboardStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        TOWXSyncController("keyboard-state");
+    }];
+'''
+          if old not in s:
+              raise SystemExit('observer target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''__attribute__((constructor)) static void TOWXV11AvatarControllerFix2Init(void) {
+    TOWXV11DiagLog("PRODUCT", "LOADED|Smooth1-FIX2|flush-edge+44pt-scroll+fail-closed-geometry+minimize-hard-hide");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        TOWXInstallObservers();
+'''
+          new = '''__attribute__((constructor)) static void TOWXV11AvatarControllerFix2Init(void) {
+    TOWXV11DiagLog("PRODUCT", "LOADED|Smooth1-FIX6|keyboard-avatar-mutual-exclusion+hard-hide+fix5-layout");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        TOWXV11KeyboardStartObserving();
+        TOWXInstallObservers();
+'''
+          if old not in s:
+              raise SystemExit('constructor target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        TOWXV11FollowerSetUpdateHandler(^(CGRect visualRect, BOOL tracking) {
+            if (!gShouldShow) return;
+'''
+          new = '''        TOWXV11FollowerSetUpdateHandler(^(CGRect visualRect, BOOL tracking) {
+            if (!gShouldShow || TOWXV11KeyboardVisible()) return;
+'''
+          if old not in s:
+              raise SystemExit('follower guard target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('SpringBoardDataBridge/control')
+          s = p.read_text()
+          s = s.replace('Version: 0.11.5-smooth1-fix5', 'Version: 0.11.6-smooth1-fix6')
+          lines = s.splitlines()
+          for i, line in enumerate(lines):
+              if line.startswith('Description:'):
+                  lines[i] = 'Description: TOWX V11 Smooth Fix6 for TrollOpen 1.4.0 with keyboard/avatar mutual exclusion, immediate keyboard hard-hide, notification plus keyboard-window fallback detection, Fix5 landscape rail recovery, exact 95-percent portrait width, complete visible avatar slots, 8-point visual spacing, 15-avatar smooth scrolling, readable local-time diagnostics, minimize hard-hide, host WeChat gating, and background avatar decoding.'
+          p.write_text('\n'.join(lines) + '\n')
+          PY
+
+      - name: Commit Fix6
+        run: |
+          git config user.name 'Dream-zhc Actions'
+          git config user.email '83204117+Dream-zhc@users.noreply.github.com'
+          git add SpringBoardDataBridge/TOWXV11AvatarControllerFix2.m SpringBoardDataBridge/control
+          git commit -m 'fix: hide avatar module while keyboard is visible'
+          git push origin HEAD:test/trollopen-1.4.0-v11-smooth
