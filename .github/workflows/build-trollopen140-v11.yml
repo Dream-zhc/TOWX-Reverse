@@ -1,4 +1,4 @@
-name: Build TrollOpen 1.4.0 TOWX V11 Smooth
+name: Build TrollOpen 1.4.0 TOWX V11 Smooth Final
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
           ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
           echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Build V11 Smooth bridge
+      - name: Build V11 Smooth final bridge
         working-directory: SpringBoardDataBridge
         run: |
           set -euo pipefail
@@ -50,32 +50,45 @@ jobs:
           make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
 
-          mkdir -p ../out-v11
+          mkdir -p ../out-v11-final
           DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
           test -n "$DEB"
-          cp "$DEB" ../out-v11/TOWX-SpringBoard-V11-S1-Session.deb
-          dpkg-deb -x "$DEB" ../out-v11/extracted
+          cp "$DEB" ../out-v11-final/TOWX-SpringBoard-V11-Smooth1-Final.deb
+          dpkg-deb -x "$DEB" ../out-v11-final/extracted
 
-          DYLIB="$(find ../out-v11/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
-          PLIST="$(find ../out-v11/extracted -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
+          DYLIB="$(find ../out-v11-final/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          PLIST="$(find ../out-v11-final/extracted -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
           test -n "$DYLIB"
           test -n "$PLIST"
 
-          strings "$DYLIB" | grep -Fq 'TOWX|SB|P2A4|LOADED|v0.10.0'
-          strings "$DYLIB" | grep -Fq 'TOWX|SB|140ANCHOR|LOADED'
-          strings "$DYLIB" | grep -Fq 'TOWX|SB|V11|LOADED|Smooth1-S1|SESSION-CONTROLLER'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FINAL|overlay-window+follower+placement+native-scroll+interruptible-anim+wechat-gate+bg-decode'
+          strings "$DYLIB" | grep -Fq 'Smooth1-FINAL|focused-bundle-probe+2s-watchdog'
+          strings "$DYLIB" | grep -Fq 'Smooth1-S2|presentation-layer+display-link'
+          strings "$DYLIB" | grep -Fq 'Smooth1-S4|native-scroll+uicontrol'
+          strings "$DYLIB" | grep -Fq 'Smooth1-S5|interruptible-property-animator'
+          strings "$DYLIB" | grep -Fq 'Smooth1-S6|session-bundle-gate|wechat=com.tencent.xin'
+          strings "$DYLIB" | grep -Fq 'Smooth1-S7|background-imageio+2s-watchdog'
 
-          cp "$DYLIB" ../out-v11/TOWXSpringBoardDataBridge.dylib
-          cp "$PLIST" ../out-v11/TOWXSpringBoardDataBridge.plist
-          file ../out-v11/TOWXSpringBoardDataBridge.dylib
-          shasum -a 256 ../out-v11/TOWXSpringBoardDataBridge.dylib > ../out-v11/SHA256SUMS.txt
+          if strings "$DYLIB" | grep -Fq 'TOWX|SB|P2A4|LOADED|v0.10.0'; then
+            echo 'ERROR: legacy V10 product still linked'
+            exit 1
+          fi
+          if strings "$DYLIB" | grep -Fq 'TOWX|SB|140ANCHOR|LOADED'; then
+            echo 'ERROR: legacy 1.4 anchor shim still linked'
+            exit 1
+          fi
 
-      - name: Upload V11 S1 bridge
+          cp "$DYLIB" ../out-v11-final/TOWXSpringBoardDataBridge.dylib
+          cp "$PLIST" ../out-v11-final/TOWXSpringBoardDataBridge.plist
+          file ../out-v11-final/TOWXSpringBoardDataBridge.dylib
+          shasum -a 256 ../out-v11-final/TOWXSpringBoardDataBridge.dylib > ../out-v11-final/SHA256SUMS.txt
+
+      - name: Upload V11 final bridge
         uses: actions/upload-artifact@v4
         with:
-          name: TOWX-V11-S1-Session
+          name: TOWX-V11-Smooth1-Final
           path: |
-            out-v11/TOWX-SpringBoard-V11-S1-Session.deb
-            out-v11/TOWXSpringBoardDataBridge.dylib
-            out-v11/TOWXSpringBoardDataBridge.plist
-            out-v11/SHA256SUMS.txt
+            out-v11-final/TOWX-SpringBoard-V11-Smooth1-Final.deb
+            out-v11-final/TOWXSpringBoardDataBridge.dylib
+            out-v11-final/TOWXSpringBoardDataBridge.plist
+            out-v11-final/SHA256SUMS.txt

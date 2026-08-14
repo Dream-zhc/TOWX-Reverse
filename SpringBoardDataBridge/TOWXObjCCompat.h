@@ -2,4 +2,8 @@
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#include <dispatch/dispatch.h>
 #include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>

@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.sbdatabridge
-Name: TOWX SpringBoard Product Link P2A4
-Version: 0.4.0-p2a4
+Name: TOWX SpringBoard V11 Smooth
+Version: 0.11.0-smooth1
 Architecture: iphoneos-arm64e
-Description: SpringBoard-side product linker for TrollOpen WeChat recents: position-based slots, glass background, placeholder cleanup, selected-state feedback, and lifecycle restoration across repeated mini-window sessions.
+Description: TOWX V11 Smooth SpringBoard integration for TrollOpen 1.4.0 with presentation-layer window following, adaptive portrait/landscape placement, native scroll physics, interruptible animations, WeChat session gating, and background avatar decoding.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
