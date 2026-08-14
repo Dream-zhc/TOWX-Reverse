@@ -1,0 +1,38 @@
+name: Patch Fix3 ARC Ownership
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - '.github/workflows/patch-fix3-arc.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/trollopen-1.4.0-v11-smooth
+      - name: Patch ARC pointer ownership
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('WeChatGoldenAdapter/TOWXGoldenAdapterV10.m')
+          s = p.read_text()
+          old = 'static BOOL TOWXIdentityAlreadyAdded(NSString *title, NSUInteger hash, NSUInteger count, NSString **titles, NSUInteger *hashes) {'
+          new = 'static BOOL TOWXIdentityAlreadyAdded(NSString *title, NSUInteger hash, NSUInteger count, NSString * __strong *titles, const NSUInteger *hashes) {'
+          if old not in s:
+              raise SystemExit('target signature not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Commit source fix
+        run: |
+          git config user.name 'Dream-zhc Actions'
+          git config user.email '83204117+Dream-zhc@users.noreply.github.com'
+          git add WeChatGoldenAdapter/TOWXGoldenAdapterV10.m
+          git commit -m 'fix: make V10 snapshot title array ARC-safe'
+          git push origin HEAD:test/trollopen-1.4.0-v11-smooth
