@@ -82,9 +82,10 @@ static CGRect TOWXPresentationRectFix3(UIView *view, UIWindow *window) {
 }
 
 static BOOL TOWXIsLandscapeFix3(UIInterfaceOrientation orientation, CGRect bounds) {
-    if (UIInterfaceOrientationIsLandscape(orientation)) return YES;
-    if (UIInterfaceOrientationIsPortrait(orientation)) return NO;
-    return CGRectGetWidth(bounds) > CGRectGetHeight(bounds);
+    BOOL byGeometry = CGRectGetWidth(bounds) > CGRectGetHeight(bounds);
+    if (orientation == UIInterfaceOrientationUnknown) return byGeometry;
+    BOOL byOrientation = UIInterfaceOrientationIsLandscape(orientation);
+    return byOrientation == byGeometry ? byOrientation : byGeometry;
 }
 
 static BOOL TOWXLooksMinimizedFix3(CGRect rect, CGRect screenBounds) {

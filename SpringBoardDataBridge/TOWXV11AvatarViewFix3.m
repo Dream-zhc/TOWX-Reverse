@@ -212,7 +212,7 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
 
     if (self.vertical) {
         CGFloat contentHeight = MAX(height, total + padding * 2.0);
-        CGFloat x = edgeShield + visualGap + padding;
+        CGFloat x = edgeShield + visualGap;
         if (x + diameter > width) x = MAX(0.0, width - diameter - padding);
         scroll.contentSize = CGSizeMake(width, contentHeight);
         scroll.alwaysBounceVertical = contentHeight > height + 0.5;
@@ -222,7 +222,7 @@ static const CGFloat kTOWXV11VisualGapFix3 = 5.0;
         }
     } else {
         CGFloat contentWidth = MAX(width, total + padding * 2.0);
-        CGFloat y = edgeShield + visualGap + padding;
+        CGFloat y = edgeShield + visualGap;
         if (y + diameter > height) y = MAX(0.0, height - diameter - padding);
         scroll.contentSize = CGSizeMake(contentWidth, height);
         scroll.alwaysBounceHorizontal = contentWidth > width + 0.5;
