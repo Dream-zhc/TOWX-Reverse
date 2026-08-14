@@ -4,6 +4,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#include <string.h>
 
 NSNotificationName const TOWXV11HostContextDidChangeNotification = @"com.dream.towx.v11.host.change";
 
@@ -65,8 +66,6 @@ static void TOWXV11LogWorkspaceMethodsOnce(id workspace) {
 }
 
 static NSString *TOWXV11ResolveHostBundle(NSString **sourceOut) {
-    /* Prefer SBMainWorkspace because TrollOpen's floating scene can be the accessibility front-most app,
-       while currentApplication usually represents the underlying full-screen host workspace app. */
     Class workspaceClass = NSClassFromString(@"SBMainWorkspace");
     id workspace = TOWXV11HostSharedInstance(workspaceClass);
     if (workspace) {
