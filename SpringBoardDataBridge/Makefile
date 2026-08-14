@@ -9,14 +9,14 @@ TOWXSpringBoardDataBridge_FILES = \
     TOWXV11Diagnostics.m \
     TOWXV11SessionControllerFinal.m \
     TOWXV11HostContext.m \
-    TOWXV11WindowFollower.m \
-    TOWXV11PlacementEngine.m \
-    TOWXV11AvatarViewFinal.m \
+    TOWXV11WindowFollowerFix2.m \
+    TOWXV11PlacementEngineFix2.m \
+    TOWXV11AvatarViewFix2.m \
     TOWXV11AnimationController.m \
     TOWXV11Gate.m \
     TOWXV11DataController.m \
-    TOWXV11AvatarController.m
-TOWXSpringBoardDataBridge_CFLAGS = -fobjc-arc -fblocks -Wall -Wextra -Wno-deprecated-declarations -include TOWXObjCCompat.h
+    TOWXV11AvatarControllerFix2.m
+TOWXSpringBoardDataBridge_CFLAGS = -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-deprecated-declarations -include TOWXObjCCompat.h
 TOWXSpringBoardDataBridge_FRAMEWORKS = Foundation UIKit QuartzCore ImageIO
 
 include $(THEOS_MAKE_PATH)/tweak.mk
