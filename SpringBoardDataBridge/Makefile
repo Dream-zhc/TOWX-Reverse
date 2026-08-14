@@ -9,12 +9,12 @@ TOWXSpringBoardDataBridge_FILES = \
     TOWXV11Diagnostics.m \
     TOWXV11SessionControllerFinal.m \
     TOWXV11HostContext.m \
-    TOWXV11WindowFollowerFix2.m \
-    TOWXV11PlacementEngineFix2.m \
-    TOWXV11AvatarViewFix2.m \
+    TOWXV11WindowFollowerFix3.m \
+    TOWXV11PlacementEngineFix3.m \
+    TOWXV11AvatarViewFix3.m \
     TOWXV11AnimationController.m \
     TOWXV11Gate.m \
-    TOWXV11DataController.m \
+    TOWXV11DataControllerFix3.m \
     TOWXV11AvatarControllerFix2.m
 TOWXSpringBoardDataBridge_CFLAGS = -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-deprecated-declarations -include TOWXObjCCompat.h
 TOWXSpringBoardDataBridge_FRAMEWORKS = Foundation UIKit QuartzCore ImageIO
