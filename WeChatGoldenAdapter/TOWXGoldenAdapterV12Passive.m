@@ -421,7 +421,8 @@ static NSIndexPath *TOWXResolvedPathForIndex(UITableView *table, NSUInteger inde
     for (NSIndexPath *path in TOWXSortedVisiblePaths(table)) {
         UITableViewCell *cell = [table cellForRowAtIndexPath:path];
         if (!cell) continue;
-        if ([[TOWXTitleFromCell(cell) ?: @""] isEqualToString:target]) return path;
+        NSString *visibleTitle = TOWXTitleFromCell(cell);
+        if ([visibleTitle isEqualToString:target]) return path;
     }
     return nil;
 }
