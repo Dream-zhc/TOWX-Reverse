@@ -20,191 +20,17 @@ jobs:
           fetch-depth: 0
 
       - name: Patch WeChat V11 switch path
+        env:
+          REPLACEMENT_B64: c3RhdGljIFVJVmlldyAqVE9XWEluc3RhbGxEaXJlY3RTd2l0Y2hNYXNrKFVJV2luZG93ICp3aW5kb3cpIHsKICAgIGlmICghd2luZG93KSByZXR1cm4gbmlsOwogICAgVUlWaWV3ICptYXNrID0gW3dpbmRvdyBzbmFwc2hvdFZpZXdBZnRlclNjcmVlblVwZGF0ZXM6Tk9dOwogICAgaWYgKCFtYXNrKSByZXR1cm4gbmlsOwogICAgbWFzay5mcmFtZSA9IHdpbmRvdy5ib3VuZHM7CiAgICBtYXNrLmF1dG9yZXNpemluZ01hc2sgPSBVSVZpZXdBdXRvcmVzaXppbmdGbGV4aWJsZVdpZHRoIHwgVUlWaWV3QXV0b3Jlc2l6aW5nRmxleGlibGVIZWlnaHQ7CiAgICBtYXNrLnVzZXJJbnRlcmFjdGlvbkVuYWJsZWQgPSBOTzsKICAgIG1hc2suYWNjZXNzaWJpbGl0eUVsZW1lbnRzSGlkZGVuID0gWUVTOwogICAgbWFzay5sYXllci56UG9zaXRpb24gPSAxMDAwMDAuMDsKICAgIFt3aW5kb3cgYWRkU3VidmlldzptYXNrXTsKICAgIFRPV1hMb2coIlRPV1h8V1h8UDJBNHxESVJFQ1QtU1dJVENILU1BU0t8djEyfHN0YXRlPWluc3RhbGxlZHx3aW5kb3c9JXAiLCB3aW5kb3cpOwogICAgcmV0dXJuIG1hc2s7Cn0KCnN0YXRpYyB2b2lkIFRPV1hSZW1vdmVEaXJlY3RTd2l0Y2hNYXNrKFVJVmlldyAqbWFzaywgQk9PTCBhbmltYXRlZCkgewogICAgaWYgKCFtYXNrKSByZXR1cm47CiAgICB2b2lkIChecmVtb3ZlKSh2b2lkKSA9IF57CiAgICAgICAgW21hc2sgcmVtb3ZlRnJvbVN1cGVydmlld107CiAgICAgICAgVE9XWExvZygiVE9XWHxXWHxQMkE0fERJUkVDVC1TV0lUQ0gtTUFTS3x2MTJ8c3RhdGU9cmVtb3ZlZCIpOwogICAgfTsKICAgIGlmICghYW5pbWF0ZWQpIHsgcmVtb3ZlKCk7IHJldHVybjsgfQogICAgW1VJVmlldyBhbmltYXRlV2l0aER1cmF0aW9uOjAuMDgKICAgICAgICAgICAgICAgICAgICAgICAgICBkZWxheTowLjAKICAgICAgICAgICAgICAgICAgICAgICAgb3B0aW9uczpVSVZpZXdBbmltYXRpb25PcHRpb25CZWdpbkZyb21DdXJyZW50U3RhdGUgfCBVSVZpZXdBbmltYXRpb25PcHRpb25BbGxvd1VzZXJJbnRlcmFjdGlvbgogICAgICAgICAgICAgICAgICAgICBhbmltYXRpb25zOl57IG1hc2suYWxwaGEgPSAwLjA7IH0KICAgICAgICAgICAgICAgICAgICAgY29tcGxldGlvbjpeKF9fdW51c2VkIEJPT0wgZmluaXNoZWQpIHsgcmVtb3ZlKCk7IH1dOwp9CgpzdGF0aWMgdm9pZCBUT1dYVmVyaWZ5TWFza2VkU3dpdGNoKE5TVUludGVnZXIgaW5kZXgsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgTlNTdHJpbmcgKnRpdGxlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIE5TVUludGVnZXIgaGFzaCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBVSU5hdmlnYXRpb25Db250cm9sbGVyICpuYXZpZ2F0aW9uLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFVJVmlld0NvbnRyb2xsZXIgKnJvb3QsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVUlWaWV3Q29udHJvbGxlciAqb2xkVG9wLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIE5TQXJyYXk8VUlWaWV3Q29udHJvbGxlciAqPiAqb3JpZ2luYWxTdGFjaywKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBVSVZpZXcgKm1hc2ssCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgTlNVSW50ZWdlciBhdHRlbXB0LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIEJPT0wgZmFsbGJhY2tQaGFzZSk7CgpzdGF0aWMgdm9pZCBUT1dYTWFza2VkRmFsbGJhY2soTlNVSW50ZWdlciBpbmRleCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIE5TU3RyaW5nICp0aXRsZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIE5TVUludGVnZXIgaGFzaCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFVJTmF2aWdhdGlvbkNvbnRyb2xsZXIgKm5hdmlnYXRpb24sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBVSVZpZXdDb250cm9sbGVyICpyb290LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVUlWaWV3Q29udHJvbGxlciAqb2xkVG9wLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgTlNBcnJheTxVSVZpZXdDb250cm9sbGVyICo+ICpvcmlnaW5hbFN0YWNrLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVUlWaWV3ICptYXNrKSB7CiAgICBUT1dYTG9nKCJUT1dYfFdYfFAyQTR8RElSRUNULVNXSVRDSC1NQVNLRUQtRkFMTEJBQ0t8djEyfGluZGV4PSVsdXx0YXJnZXQ9JXN8cG9saWN5PW5ldmVyLWV4cG9zZS1yb290IiwKICAgICAgICAgICAgKHVuc2lnbmVkIGxvbmcpaW5kZXgsCiAgICAgICAgICAgIHRpdGxlLlVURjhTdHJpbmcgPzogIj8iKTsKCiAgICBVSVRhYmxlVmlldyAqdGFibGUgPSBnU25hcHNob3RUYWJsZSA/OiBUT1dYRGlzY292ZXJDb252ZXJzYXRpb25UYWJsZSgpOwogICAgTlNJbmRleFBhdGggKnBhdGggPSBUT1dYRmluZFBhdGhGb3JJZGVudGl0eSh0YWJsZSwgdGl0bGUsIGhhc2gpOwogICAgaWYgKCFwYXRoKSB7CiAgICAgICAgaWYgKG9yaWdpbmFsU3RhY2suY291bnQpIFtuYXZpZ2F0aW9uIHNldFZpZXdDb250cm9sbGVyczpvcmlnaW5hbFN0YWNrIGFuaW1hdGVkOk5PXTsKICAgICAgICBUT1dYUmVtb3ZlRGlyZWN0U3dpdGNoTWFzayhtYXNrLCBOTyk7CiAgICAgICAgZ09wZW5CdXN5ID0gTk87CiAgICAgICAgVE9XWExvZygiVE9XWHxXWHxQMkE0fERJUkVDVC1TV0lUQ0gtRkFJTHx2MTJ8aW5kZXg9JWx1fHJlYXNvbj1mYWxsYmFjay1pZGVudGl0eS1taXNzIiwgKHVuc2lnbmVkIGxvbmcpaW5kZXgpOwogICAgICAgIHJldHVybjsKICAgIH0KCiAgICBbVUlWaWV3IHBlcmZvcm1XaXRob3V0QW5pbWF0aW9uOl57CiAgICAgICAgW25hdmlnYXRpb24gc2V0Vmlld0NvbnRyb2xsZXJzOkBbcm9vdF0gYW5pbWF0ZWQ6Tk9dOwogICAgfV07CiAgICBfX2Jsb2NrIEJPT0wgc2VsZWN0ZWQgPSBOTzsKICAgIFtVSVZpZXcgcGVyZm9ybVdpdGhvdXRBbmltYXRpb246Xnsgc2VsZWN0ZWQgPSBUT1dYU2VsZWN0UGF0aCh0YWJsZSwgcGF0aCk7IH1dOwogICAgaWYgKCFzZWxlY3RlZCkgewogICAgICAgIGlmIChvcmlnaW5hbFN0YWNrLmNvdW50KSBbbmF2aWdhdGlvbiBzZXRWaWV3Q29udHJvbGxlcnM6b3JpZ2luYWxTdGFjayBhbmltYXRlZDpOT107CiAgICAgICAgVE9XWFJlbW92ZURpcmVjdFN3aXRjaE1hc2sobWFzaywgTk8pOwogICAgICAgIGdPcGVuQnVzeSA9IE5POwogICAgICAgIFRPV1hMb2coIlRPV1h8V1h8UDJBNHxESVJFQ1QtU1dJVENILUZBSUx8djEyfGluZGV4PSVsdXxyZWFzb249ZmFsbGJhY2stc2VsZWN0LWZhaWxlZCIsICh1bnNpZ25lZCBsb25nKWluZGV4KTsKICAgICAgICByZXR1cm47CiAgICB9CgogICAgVE9XWFZlcmlmeU1hc2tlZFN3aXRjaChpbmRleCwgdGl0bGUsIGhhc2gsIG5hdmlnYXRpb24sIHJvb3QsIG9sZFRvcCwgb3JpZ2luYWxTdGFjaywgbWFzaywgMCwgWUVTKTsKfQoKc3RhdGljIHZvaWQgVE9XWFZlcmlmeU1hc2tlZFN3aXRjaChOU1VJbnRlZ2VyIGluZGV4LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIE5TU3RyaW5nICp0aXRsZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBOU1VJbnRlZ2VyIGhhc2gsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVUlOYXZpZ2F0aW9uQ29udHJvbGxlciAqbmF2aWdhdGlvbiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBVSVZpZXdDb250cm9sbGVyICpyb290LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFVJVmlld0NvbnRyb2xsZXIgKm9sZFRvcCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBOU0FycmF5PFVJVmlld0NvbnRyb2xsZXIgKj4gKm9yaWdpbmFsU3RhY2ssCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVUlWaWV3ICptYXNrLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIE5TVUludGVnZXIgYXR0ZW1wdCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBCT09MIGZhbGxiYWNrUGhhc2UpIHsKICAgIFVJVmlld0NvbnRyb2xsZXIgKm5ld1RvcCA9IG5hdmlnYXRpb24udG9wVmlld0NvbnRyb2xsZXI7CiAgICBpZiAobmV3VG9wICYmIG5ld1RvcCAhPSByb290ICYmICghb2xkVG9wIHx8IG5ld1RvcCAhPSBvbGRUb3ApKSB7CiAgICAgICAgW1VJVmlldyBwZXJmb3JtV2l0aG91dEFuaW1hdGlvbjpeewogICAgICAgICAgICBbbmF2aWdhdGlvbiBzZXRWaWV3Q29udHJvbGxlcnM6QFtyb290LCBuZXdUb3BdIGFuaW1hdGVkOk5PXTsKICAgICAgICB9XTsKICAgICAgICBUT1dYQWNrKGluZGV4KTsKICAgICAgICBnT3BlbkJ1c3kgPSBOTzsKICAgICAgICBUT1dYTG9nKCJUT1dYfFdYfFAyQTR8RElSRUNULVNXSVRDSC1TVUNDRVNTfHYxMnxpbmRleD0lbHV8dGFyZ2V0PSVzfGF0dGVtcHQ9JWx1fGZhbGxiYWNrPSVkfG5ld1RvcD0lcyIsCiAgICAgICAgICAgICAgICAodW5zaWduZWQgbG9uZylpbmRleCwKICAgICAgICAgICAgICAgIHRpdGxlLlVURjhTdHJpbmcgPzogIj8iLAogICAgICAgICAgICAgICAgKHVuc2lnbmVkIGxvbmcpYXR0ZW1wdCwKICAgICAgICAgICAgICAgIGZhbGxiYWNrUGhhc2UgPyAxIDogMCwKICAgICAgICAgICAgICAgIG9iamVjdF9nZXRDbGFzc05hbWUobmV3VG9wKSA/OiAiPyIpOwogICAgICAgIGRpc3BhdGNoX2FmdGVyKGRpc3BhdGNoX3RpbWUoRElTUEFUQ0hfVElNRV9OT1csIChpbnQ2NF90KSg1NSAqIE5TRUNfUEVSX01TRUMpKSwgZGlzcGF0Y2hfZ2V0X21haW5fcXVldWUoKSwgXnsKICAgICAgICAgICAgVE9XWFJlbW92ZURpcmVjdFN3aXRjaE1hc2sobWFzaywgWUVTKTsKICAgICAgICB9KTsKICAgICAgICByZXR1cm47CiAgICB9CgogICAgaWYgKGF0dGVtcHQgPCA3KSB7CiAgICAgICAgZGlzcGF0Y2hfYWZ0ZXIoZGlzcGF0Y2hfdGltZShESVNQQVRDSF9USU1FX05PVywgKGludDY0X3QpKDIwICogTlNFQ19QRVJfTVNFQykpLCBkaXNwYXRjaF9nZXRfbWFpbl9xdWV1ZSgpLCBeewogICAgICAgICAgICBUT1dYVmVyaWZ5TWFza2VkU3dpdGNoKGluZGV4LCB0aXRsZSwgaGFzaCwgbmF2aWdhdGlvbiwgcm9vdCwgb2xkVG9wLCBvcmlnaW5hbFN0YWNrLCBtYXNrLCBhdHRlbXB0ICsgMSwgZmFsbGJhY2tQaGFzZSk7CiAgICAgICAgfSk7CiAgICAgICAgcmV0dXJuOwogICAgfQoKICAgIGlmICghZmFsbGJhY2tQaGFzZSkgewogICAgICAgIFRPV1hNYXNrZWRGYWxsYmFjayhpbmRleCwgdGl0bGUsIGhhc2gsIG5hdmlnYXRpb24sIHJvb3QsIG9sZFRvcCwgb3JpZ2luYWxTdGFjaywgbWFzayk7CiAgICAgICAgcmV0dXJuOwogICAgfQoKICAgIGlmIChvcmlnaW5hbFN0YWNrLmNvdW50KSBbbmF2aWdhdGlvbiBzZXRWaWV3Q29udHJvbGxlcnM6b3JpZ2luYWxTdGFjayBhbmltYXRlZDpOT107CiAgICBUT1dYUmVtb3ZlRGlyZWN0U3dpdGNoTWFzayhtYXNrLCBOTyk7CiAgICBnT3BlbkJ1c3kgPSBOTzsKICAgIFRPV1hMb2coIlRPV1h8V1h8UDJBNHxESVJFQ1QtU1dJVENILUZBSUx8djEyfGluZGV4PSVsdXx0YXJnZXQ9JXN8cmVhc29uPW5vLXRhcmdldC1hZnRlci1tYXNrZWQtZmFsbGJhY2siLAogICAgICAgICAgICAodW5zaWduZWQgbG9uZylpbmRleCwKICAgICAgICAgICAgdGl0bGUuVVRGOFN0cmluZyA/OiAiPyIpOwp9CgpzdGF0aWMgdm9pZCBUT1dYT3BlblJlY2VudChOU1VJbnRlZ2VyIGluZGV4KSB7CiAgICBAYXV0b3JlbGVhc2Vwb29sIHsKICAgICAgICBpZiAoaW5kZXggPj0gZ1NuYXBzaG90Q291bnQgfHwgaW5kZXggPj0gVE9XWF9NQVhfUkVDRU5UUyB8fCBnT3BlbkJ1c3kpIHJldHVybjsKICAgICAgICBVSVRhYmxlVmlldyAqdGFibGUgPSBnU25hcHNob3RUYWJsZSA/OiBUT1dYRGlzY292ZXJDb252ZXJzYXRpb25UYWJsZSgpOwogICAgICAgIE5TU3RyaW5nICp0aXRsZSA9IFtnU25hcHNob3RUaXRsZXNbaW5kZXhdIGNvcHldOwogICAgICAgIE5TVUludGVnZXIgaGFzaCA9IGdTbmFwc2hvdEhhc2hlc1tpbmRleF07CiAgICAgICAgaWYgKCFbdGFibGUgaXNLaW5kT2ZDbGFzczpbVUlUYWJsZVZpZXcgY2xhc3NdXSB8fCB0aXRsZS5sZW5ndGggPT0gMCB8fCBoYXNoID09IDApIHJldHVybjsKCiAgICAgICAgTlNJbmRleFBhdGggKnBhdGggPSBUT1dYRmluZFBhdGhGb3JJZGVudGl0eSh0YWJsZSwgdGl0bGUsIGhhc2gpOwogICAgICAgIGlmICghcGF0aCkgewogICAgICAgICAgICBUT1dYTG9nKCJUT1dYfFdYfFAyQTR8T1BFTi1SRUpFQ1R8djEyfGluZGV4PSVsdXxyZWFzb249aWRlbnRpdHktbm90LWZvdW5kfHRhcmdldD0lcyIsCiAgICAgICAgICAgICAgICAgICAgKHVuc2lnbmVkIGxvbmcpaW5kZXgsCiAgICAgICAgICAgICAgICAgICAgdGl0bGUuVVRGOFN0cmluZyA/OiAiPyIpOwogICAgICAgICAgICByZXR1cm47CiAgICAgICAgfQoKICAgICAgICBVSVdpbmRvdyAqd2luZG93ID0gVE9XWEFjdGl2ZVdpbmRvdygpOwogICAgICAgIFVJTmF2aWdhdGlvbkNvbnRyb2xsZXIgKm5hdmlnYXRpb24gPSBUT1dYRmluZE5hdmlnYXRpb25Db250cm9sbGVyKHdpbmRvdy5yb290Vmlld0NvbnRyb2xsZXIpOwogICAgICAgIGlmICghbmF2aWdhdGlvbiB8fCBuYXZpZ2F0aW9uLnZpZXdDb250cm9sbGVycy5jb3VudCA9PSAwKSByZXR1cm47CiAgICAgICAgVUlWaWV3Q29udHJvbGxlciAqcm9vdCA9IG5hdmlnYXRpb24udmlld0NvbnRyb2xsZXJzLmZpcnN0T2JqZWN0OwogICAgICAgIFVJVmlld0NvbnRyb2xsZXIgKm9sZFRvcCA9IG5hdmlnYXRpb24udG9wVmlld0NvbnRyb2xsZXI7CiAgICAgICAgTlNBcnJheTxVSVZpZXdDb250cm9sbGVyICo+ICpvcmlnaW5hbFN0YWNrID0gW25hdmlnYXRpb24udmlld0NvbnRyb2xsZXJzIGNvcHldOwogICAgICAgIGdPcGVuQnVzeSA9IFlFUzsKCiAgICAgICAgaWYgKG9sZFRvcCA9PSByb290KSB7CiAgICAgICAgICAgIFRPV1hPcGVuRnJvbVJvb3QoaW5kZXgsIHRpdGxlLCBoYXNoKTsKICAgICAgICAgICAgcmV0dXJuOwogICAgICAgIH0KCiAgICAgICAgVUlWaWV3ICptYXNrID0gVE9XWEluc3RhbGxEaXJlY3RTd2l0Y2hNYXNrKHdpbmRvdyk7CiAgICAgICAgX19ibG9jayBCT09MIHNlbGVjdGVkID0gTk87CiAgICAgICAgW1VJVmlldyBwZXJmb3JtV2l0aG91dEFuaW1hdGlvbjpeeyBzZWxlY3RlZCA9IFRPV1hTZWxlY3RQYXRoKHRhYmxlLCBwYXRoKTsgfV07CiAgICAgICAgaWYgKCFzZWxlY3RlZCkgewogICAgICAgICAgICBUT1dYUmVtb3ZlRGlyZWN0U3dpdGNoTWFzayhtYXNrLCBOTyk7CiAgICAgICAgICAgIGdPcGVuQnVzeSA9IE5POwogICAgICAgICAgICBUT1dYTG9nKCJUT1dYfFdYfFAyQTR8RElSRUNULVNXSVRDSC1GQUlMfHYxMnxpbmRleD0lbHV8cmVhc29uPWRpcmVjdC1zZWxlY3QtZmFpbGVkfHRhcmdldD0lcyIsCiAgICAgICAgICAgICAgICAgICAgKHVuc2lnbmVkIGxvbmcpaW5kZXgsCiAgICAgICAgICAgICAgICAgICAgdGl0bGUuVVRGOFN0cmluZyA/OiAiPyIpOwogICAgICAgICAgICByZXR1cm47CiAgICAgICAgfQoKICAgICAgICBUT1dYTG9nKCJUT1dYfFdYfFAyQTR8RElSRUNULVNXSVRDSC1CRUdJTnx2MTJ8aW5kZXg9JWx1fHRhcmdldD0lc3xvbGRUb3A9JXN8ZGVwdGg9JWx1fG1hc2s9JWQiLAogICAgICAgICAgICAgICAgKHVuc2lnbmVkIGxvbmcpaW5kZXgsCiAgICAgICAgICAgICAgICB0aXRsZS5VVEY4U3RyaW5nID86ICI/IiwKICAgICAgICAgICAgICAgIG9iamVjdF9nZXRDbGFzc05hbWUob2xkVG9wKSA/OiAiPyIsCiAgICAgICAgICAgICAgICAodW5zaWduZWQgbG9uZyluYXZpZ2F0aW9uLnZpZXdDb250cm9sbGVycy5jb3VudCwKICAgICAgICAgICAgICAgIG1hc2sgPyAxIDogMCk7CiAgICAgICAgVE9XWFZlcmlmeU1hc2tlZFN3aXRjaChpbmRleCwgdGl0bGUsIGhhc2gsIG5hdmlnYXRpb24sIHJvb3QsIG9sZFRvcCwgb3JpZ2luYWxTdGFjaywgbWFzaywgMCwgTk8pOwogICAgfQp9Cgo=
         run: |
           python3 - <<'PY'
+          import base64, os
           from pathlib import Path
           p = Path('WeChatGoldenAdapter/TOWXGoldenAdapterV11.m')
           s = p.read_text()
           start = s.index('static void TOWXFallbackViaRoot(')
           end = s.index('static void TOWXHeavyTick(void) {')
-          replacement = r'''static UIView *TOWXInstallDirectSwitchMask(UIWindow *window) {
-    if (!window) return nil;
-    UIView *mask = [window snapshotViewAfterScreenUpdates:NO];
-    if (!mask) return nil;
-    mask.frame = window.bounds;
-    mask.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    mask.userInteractionEnabled = NO;
-    mask.accessibilityElementsHidden = YES;
-    mask.layer.zPosition = 100000.0;
-    [window addSubview:mask];
-    TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-MASK|v12|state=installed|window=%p", window);
-    return mask;
-}
-
-static void TOWXRemoveDirectSwitchMask(UIView *mask, BOOL animated) {
-    if (!mask) return;
-    void (^remove)(void) = ^{
-        [mask removeFromSuperview];
-        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-MASK|v12|state=removed");
-    };
-    if (!animated) { remove(); return; }
-    [UIView animateWithDuration:0.08
-                          delay:0.0
-                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
-                     animations:^{ mask.alpha = 0.0; }
-                     completion:^(__unused BOOL finished) { remove(); }];
-}
-
-static void TOWXVerifyMaskedSwitch(NSUInteger index,
-                                   NSString *title,
-                                   NSUInteger hash,
-                                   UINavigationController *navigation,
-                                   UIViewController *root,
-                                   UIViewController *oldTop,
-                                   NSArray<UIViewController *> *originalStack,
-                                   UIView *mask,
-                                   NSUInteger attempt,
-                                   BOOL fallbackPhase);
-
-static void TOWXMaskedFallback(NSUInteger index,
-                               NSString *title,
-                               NSUInteger hash,
-                               UINavigationController *navigation,
-                               UIViewController *root,
-                               UIViewController *oldTop,
-                               NSArray<UIViewController *> *originalStack,
-                               UIView *mask) {
-    TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-MASKED-FALLBACK|v12|index=%lu|target=%s|policy=never-expose-root",
-            (unsigned long)index,
-            title.UTF8String ?: "?");
-
-    UITableView *table = gSnapshotTable ?: TOWXDiscoverConversationTable();
-    NSIndexPath *path = TOWXFindPathForIdentity(table, title, hash);
-    if (!path) {
-        if (originalStack.count) [navigation setViewControllers:originalStack animated:NO];
-        TOWXRemoveDirectSwitchMask(mask, NO);
-        gOpenBusy = NO;
-        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|reason=fallback-identity-miss", (unsigned long)index);
-        return;
-    }
-
-    [UIView performWithoutAnimation:^{
-        [navigation setViewControllers:@[root] animated:NO];
-    }];
-    BOOL selected = NO;
-    [UIView performWithoutAnimation:^{ selected = TOWXSelectPath(table, path); }];
-    if (!selected) {
-        if (originalStack.count) [navigation setViewControllers:originalStack animated:NO];
-        TOWXRemoveDirectSwitchMask(mask, NO);
-        gOpenBusy = NO;
-        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|reason=fallback-select-failed", (unsigned long)index);
-        return;
-    }
-
-    TOWXVerifyMaskedSwitch(index, title, hash, navigation, root, oldTop, originalStack, mask, 0, YES);
-}
-
-static void TOWXVerifyMaskedSwitch(NSUInteger index,
-                                   NSString *title,
-                                   NSUInteger hash,
-                                   UINavigationController *navigation,
-                                   UIViewController *root,
-                                   UIViewController *oldTop,
-                                   NSArray<UIViewController *> *originalStack,
-                                   UIView *mask,
-                                   NSUInteger attempt,
-                                   BOOL fallbackPhase) {
-    UIViewController *newTop = navigation.topViewController;
-    if (newTop && newTop != root && (!oldTop || newTop != oldTop)) {
-        [UIView performWithoutAnimation:^{
-            [navigation setViewControllers:@[root, newTop] animated:NO];
-        }];
-        TOWXAck(index);
-        gOpenBusy = NO;
-        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-SUCCESS|v12|index=%lu|target=%s|attempt=%lu|fallback=%d|newTop=%s",
-                (unsigned long)index,
-                title.UTF8String ?: "?",
-                (unsigned long)attempt,
-                fallbackPhase ? 1 : 0,
-                object_getClassName(newTop) ?: "?");
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(55 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
-            TOWXRemoveDirectSwitchMask(mask, YES);
-        });
-        return;
-    }
-
-    if (attempt < 7) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
-            TOWXVerifyMaskedSwitch(index, title, hash, navigation, root, oldTop, originalStack, mask, attempt + 1, fallbackPhase);
-        });
-        return;
-    }
-
-    if (!fallbackPhase) {
-        TOWXMaskedFallback(index, title, hash, navigation, root, oldTop, originalStack, mask);
-        return;
-    }
-
-    if (originalStack.count) [navigation setViewControllers:originalStack animated:NO];
-    TOWXRemoveDirectSwitchMask(mask, NO);
-    gOpenBusy = NO;
-    TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|target=%s|reason=no-target-after-masked-fallback",
-            (unsigned long)index,
-            title.UTF8String ?: "?");
-}
-
-static void TOWXOpenRecent(NSUInteger index) {
-    @autoreleasepool {
-        if (index >= gSnapshotCount || index >= TOWX_MAX_RECENTS || gOpenBusy) return;
-        UITableView *table = gSnapshotTable ?: TOWXDiscoverConversationTable();
-        NSString *title = [gSnapshotTitles[index] copy];
-        NSUInteger hash = gSnapshotHashes[index];
-        if (![table isKindOfClass:[UITableView class]] || title.length == 0 || hash == 0) return;
-
-        NSIndexPath *path = TOWXFindPathForIdentity(table, title, hash);
-        if (!path) {
-            TOWXLog("TOWX|WX|P2A4|OPEN-REJECT|v12|index=%lu|reason=identity-not-found|target=%s",
-                    (unsigned long)index,
-                    title.UTF8String ?: "?");
-            return;
-        }
-
-        UIWindow *window = TOWXActiveWindow();
-        UINavigationController *navigation = TOWXFindNavigationController(window.rootViewController);
-        if (!navigation || navigation.viewControllers.count == 0) return;
-        UIViewController *root = navigation.viewControllers.firstObject;
-        UIViewController *oldTop = navigation.topViewController;
-        NSArray<UIViewController *> *originalStack = [navigation.viewControllers copy];
-        gOpenBusy = YES;
-
-        if (oldTop == root) {
-            TOWXOpenFromRoot(index, title, hash);
-            return;
-        }
-
-        UIView *mask = TOWXInstallDirectSwitchMask(window);
-        BOOL selected = NO;
-        [UIView performWithoutAnimation:^{ selected = TOWXSelectPath(table, path); }];
-        if (!selected) {
-            TOWXRemoveDirectSwitchMask(mask, NO);
-            gOpenBusy = NO;
-            TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|reason=direct-select-failed|target=%s",
-                    (unsigned long)index,
-                    title.UTF8String ?: "?");
-            return;
-        }
-
-        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-BEGIN|v12|index=%lu|target=%s|oldTop=%s|depth=%lu|mask=%d",
-                (unsigned long)index,
-                title.UTF8String ?: "?",
-                object_getClassName(oldTop) ?: "?",
-                (unsigned long)navigation.viewControllers.count,
-                mask ? 1 : 0);
-        TOWXVerifyMaskedSwitch(index, title, hash, navigation, root, oldTop, originalStack, mask, 0, NO);
-    }
-}
-
-'''
+          replacement = base64.b64decode(os.environ['REPLACEMENT_B64']).decode()
           s = s[:start] + replacement + s[end:]
           s = s.replace('TOWX|WX|P2A4|ADAPTER-START|v0.10.1', 'TOWX|WX|P2A4|ADAPTER-START|v0.10.2')
           p.write_text(s)
@@ -216,7 +42,6 @@ static void TOWXOpenRecent(NSUInteger index) {
                         'Description: TOWX WeChat Fix7 adapter with up to 15 conversation snapshots, standalone-independent discovery, masked direct chat-to-chat switching without visible root-page flash, and stable avatar export.')
           control.write_text(c)
           PY
-
           git config user.name 'Dream-zhc CI'
           git config user.email 'actions@users.noreply.github.com'
           git add WeChatGoldenAdapter/TOWXGoldenAdapterV11.m WeChatGoldenAdapter/control
