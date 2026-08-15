@@ -1,0 +1,114 @@
+name: Build TOWX V11 Smooth Fix8
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - 'SpringBoardDataBridge/**'
+      - 'WeChatGoldenAdapter/**'
+      - '.github/workflows/build-v11-fix8.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: towx-v11-fix8-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout Fix8 HEAD
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build SpringBoard Fix8
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          mkdir -p ../out-fix8/springboard
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          test "$(dpkg-deb -f "$DEB" Version)" = "0.11.8-smooth1-fix8"
+          cp "$DEB" ../out-fix8/springboard/TOWX-SpringBoard-V11-Smooth1-Fix8.deb
+          dpkg-deb -x "$DEB" ../out-fix8/springboard/extracted
+          DYLIB="$(find ../out-fix8/springboard/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          test -n "$DYLIB"
+          strings "$DYLIB" > ../out-fix8/springboard/strings.txt
+          grep -F 'Smooth1-FIX8|split-authoritative+positive-session-wechat-fallback|qq-other-hide|unresolved-hide' ../out-fix8/springboard/strings.txt
+          grep -F 'Smooth1-FIX7|physical-orientation|landscape-right-vertical|portrait-95pct' ../out-fix8/springboard/strings.txt
+          grep -F 'Smooth1-FIX6B|strict-geometry+fullscreen-host-reject+did-hide-reset' ../out-fix8/springboard/strings.txt
+          lipo -info "$DYLIB" | tee ../out-fix8/springboard/lipo.txt
+          lipo -info "$DYLIB" | grep -q 'arm64'
+          lipo -info "$DYLIB" | grep -q 'arm64e'
+          cp "$DYLIB" ../out-fix8/springboard/TOWXSpringBoardDataBridge.dylib
+          shasum -a 256 "$DYLIB" > ../out-fix8/springboard/SHA256SUMS.txt
+
+      - name: Build WeChat Fix8 Passive
+        working-directory: WeChatGoldenAdapter
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64" TARGET="$TARGET_VALUE"
+          mkdir -p ../out-fix8/wechat
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          test "$(dpkg-deb -f "$DEB" Version)" = "0.10.3-fix8"
+          cp "$DEB" ../out-fix8/wechat/TOWX-WeChat-GoldenAdapter-0.10.3-Fix8.deb
+          dpkg-deb -x "$DEB" ../out-fix8/wechat/extracted
+          DYLIB="$(find ../out-fix8/wechat/extracted -name 'TOWXGoldenAdapter.dylib' -type f -print -quit)"
+          test -n "$DYLIB"
+          strings "$DYLIB" > ../out-fix8/wechat/strings.txt
+          grep -F 'ADAPTER-START|v0.10.3-fix8|visible-cells-only|offscreen-build=0|global-uiview-hooks=0|timer=1.5s|scroll-skip=1|png-background=1' ../out-fix8/wechat/strings.txt
+          grep -F 'PASSIVE-STATE|LOADED|Fix8|global-uiview-hooks=0|guard-timer=0|lifecycle-only' ../out-fix8/wechat/strings.txt
+          grep -F 'SNAPSHOT|serial=%llu|count=%lu|source=visible-cells-only|offscreen-build=0|png-main-thread=0' ../out-fix8/wechat/strings.txt
+          grep -F 'DIRECT-SWITCH-SUCCESS' ../out-fix8/wechat/strings.txt
+          if grep -Fq 'V9-GUARD|HOOKS-READY' ../out-fix8/wechat/strings.txt; then
+            echo 'ERROR: legacy global UIView guard is still linked'
+            exit 1
+          fi
+          lipo -info "$DYLIB" | tee ../out-fix8/wechat/lipo.txt
+          lipo -info "$DYLIB" | grep -q 'arm64'
+          cp "$DYLIB" ../out-fix8/wechat/TOWXGoldenAdapter.dylib
+          shasum -a 256 "$DYLIB" > ../out-fix8/wechat/SHA256SUMS.txt
+
+      - name: Upload Fix8
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-V11-Smooth1-Fix8
+          path: |
+            out-fix8/springboard/TOWX-SpringBoard-V11-Smooth1-Fix8.deb
+            out-fix8/springboard/TOWXSpringBoardDataBridge.dylib
+            out-fix8/springboard/SHA256SUMS.txt
+            out-fix8/wechat/TOWX-WeChat-GoldenAdapter-0.10.3-Fix8.deb
+            out-fix8/wechat/TOWXGoldenAdapter.dylib
+            out-fix8/wechat/SHA256SUMS.txt
