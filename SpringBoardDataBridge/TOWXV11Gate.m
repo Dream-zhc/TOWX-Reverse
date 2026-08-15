@@ -1,4 +1,5 @@
 #import "TOWXV11Gate.h"
+#import "TOWXV11SplitIdentity.h"
 #import "TOWXV11Diagnostics.h"
 
 static NSString * const kTOWXV11WeChatBundle = @"com.tencent.xin";
@@ -9,7 +10,9 @@ BOOL TOWXV11ShouldShowAvatarModule(BOOL sessionVisible,
                                    BOOL weChatActive,
                                    NSUInteger avatarCount,
                                    const char **reasonOut) {
+    (void)sessionBundleID;
     (void)weChatActive;
+    NSString *strictSplitBundle = TOWXV11SplitBundleIdentifier();
     const char *reason = "show";
     BOOL show = YES;
 
@@ -19,17 +22,13 @@ BOOL TOWXV11ShouldShowAvatarModule(BOOL sessionVisible,
     } else if (avatarCount == 0) {
         show = NO;
         reason = "count-zero";
-    } else if (sessionBundleID.length == 0) {
-        /* Fix7 is deliberately fail-closed. Cached WeChat contacts must never leak into
-           QQ/Telegram/other TrollOpen sessions simply because identity resolution is late. */
+    } else if (strictSplitBundle.length == 0) {
         show = NO;
         reason = "split-unresolved";
-    } else if (![sessionBundleID isEqualToString:kTOWXV11WeChatBundle]) {
+    } else if (![strictSplitBundle isEqualToString:kTOWXV11WeChatBundle]) {
         show = NO;
         reason = "split-not-wechat";
     } else if ([hostBundleID isEqualToString:kTOWXV11WeChatBundle]) {
-        /* Product rule retained: when the underlying full-screen app is WeChat, do not add
-           a second external avatar module on top of it. */
         show = NO;
         reason = "host-is-wechat";
     } else {
@@ -42,5 +41,5 @@ BOOL TOWXV11ShouldShowAvatarModule(BOOL sessionVisible,
 }
 
 __attribute__((constructor)) static void TOWXV11GateMarker(void) {
-    TOWXV11DiagLog("GATE", "LOADED|Smooth1-FIX7|strict-floating-wechat-only|qq-other-hide|unresolved-hide");
+    TOWXV11DiagLog("GATE", "LOADED|Smooth1-FIX7|SplitIdentity-authoritative|wechat-only|qq-other-hide|unresolved-hide");
 }
