@@ -9,9 +9,11 @@ TOWXSpringBoardDataBridge_FILES = \
     TOWXV11Diagnostics.m \
     TOWXV11SessionControllerFinal.m \
     TOWXV11HostContext.m \
+    TOWXV11SplitIdentity.m \
+    TOWXV11SplitIdentityBridge.m \
     TOWXV11KeyboardState.m \
     TOWXV11WindowFollowerFix3.m \
-    TOWXV11PlacementEngineFix3b.m \
+    TOWXV11PlacementEngineFix7.m \
     TOWXV11AvatarViewFix3.m \
     TOWXV11AnimationController.m \
     TOWXV11Gate.m \
