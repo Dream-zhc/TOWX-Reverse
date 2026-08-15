@@ -1,0 +1,38 @@
+name: Patch Fix8 Passive Syntax
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - '.github/workflows/patch-fix8-passive-syntax.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/trollopen-1.4.0-v11-smooth
+          fetch-depth: 0
+
+      - name: Fix passive adapter syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('WeChatGoldenAdapter/TOWXGoldenAdapterV12Passive.m')
+          s = p.read_text()
+          old = '        if ([[TOWXTitleFromCell(cell) ?: @""] isEqualToString:target]) return path;'
+          new = '        NSString *visibleTitle = TOWXTitleFromCell(cell);\n        if ([visibleTitle isEqualToString:target]) return path;'
+          if old not in s:
+              raise SystemExit('target syntax not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git config user.name 'Dream-zhc CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add WeChatGoldenAdapter/TOWXGoldenAdapterV12Passive.m
+          git commit -m 'fix: correct passive visible-title comparison syntax'
+          git push origin HEAD:test/trollopen-1.4.0-v11-smooth
