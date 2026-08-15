@@ -500,45 +500,130 @@ static void TOWXOpenFromRoot(NSUInteger index, NSString *title, NSUInteger hash)
             title.UTF8String ?: "?");
 }
 
-static void TOWXFallbackViaRoot(NSUInteger index,
-                                NSString *title,
-                                NSUInteger hash,
-                                UINavigationController *navigation) {
-    TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FALLBACK|v11|index=%lu|target=%s|reason=no-new-top",
-            (unsigned long)index,
-            title.UTF8String ?: "?");
-    [navigation popToRootViewControllerAnimated:NO];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
-        TOWXOpenFromRoot(index, title, hash);
-    });
+static UIView *TOWXInstallDirectSwitchMask(UIWindow *window) {
+    if (!window) return nil;
+    UIView *mask = [window snapshotViewAfterScreenUpdates:NO];
+    if (!mask) return nil;
+    mask.frame = window.bounds;
+    mask.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    mask.userInteractionEnabled = NO;
+    mask.accessibilityElementsHidden = YES;
+    mask.layer.zPosition = 100000.0;
+    [window addSubview:mask];
+    TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-MASK|v12|state=installed|window=%p", window);
+    return mask;
 }
 
-static void TOWXVerifyDirectPush(NSUInteger index,
-                                 NSString *title,
-                                 NSUInteger hash,
-                                 UINavigationController *navigation,
-                                 UIViewController *root,
-                                 UIViewController *oldTop,
-                                 NSUInteger attempt) {
+static void TOWXRemoveDirectSwitchMask(UIView *mask, BOOL animated) {
+    if (!mask) return;
+    void (^remove)(void) = ^{
+        [mask removeFromSuperview];
+        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-MASK|v12|state=removed");
+    };
+    if (!animated) { remove(); return; }
+    [UIView animateWithDuration:0.08
+                          delay:0.0
+                        options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                     animations:^{ mask.alpha = 0.0; }
+                     completion:^(__unused BOOL finished) { remove(); }];
+}
+
+static void TOWXVerifyMaskedSwitch(NSUInteger index,
+                                   NSString *title,
+                                   NSUInteger hash,
+                                   UINavigationController *navigation,
+                                   UIViewController *root,
+                                   UIViewController *oldTop,
+                                   NSArray<UIViewController *> *originalStack,
+                                   UIView *mask,
+                                   NSUInteger attempt,
+                                   BOOL fallbackPhase);
+
+static void TOWXMaskedFallback(NSUInteger index,
+                               NSString *title,
+                               NSUInteger hash,
+                               UINavigationController *navigation,
+                               UIViewController *root,
+                               UIViewController *oldTop,
+                               NSArray<UIViewController *> *originalStack,
+                               UIView *mask) {
+    TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-MASKED-FALLBACK|v12|index=%lu|target=%s|policy=never-expose-root",
+            (unsigned long)index,
+            title.UTF8String ?: "?");
+
+    UITableView *table = gSnapshotTable ?: TOWXDiscoverConversationTable();
+    NSIndexPath *path = TOWXFindPathForIdentity(table, title, hash);
+    if (!path) {
+        if (originalStack.count) [navigation setViewControllers:originalStack animated:NO];
+        TOWXRemoveDirectSwitchMask(mask, NO);
+        gOpenBusy = NO;
+        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|reason=fallback-identity-miss", (unsigned long)index);
+        return;
+    }
+
+    [UIView performWithoutAnimation:^{
+        [navigation setViewControllers:@[root] animated:NO];
+    }];
+    __block BOOL selected = NO;
+    [UIView performWithoutAnimation:^{ selected = TOWXSelectPath(table, path); }];
+    if (!selected) {
+        if (originalStack.count) [navigation setViewControllers:originalStack animated:NO];
+        TOWXRemoveDirectSwitchMask(mask, NO);
+        gOpenBusy = NO;
+        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|reason=fallback-select-failed", (unsigned long)index);
+        return;
+    }
+
+    TOWXVerifyMaskedSwitch(index, title, hash, navigation, root, oldTop, originalStack, mask, 0, YES);
+}
+
+static void TOWXVerifyMaskedSwitch(NSUInteger index,
+                                   NSString *title,
+                                   NSUInteger hash,
+                                   UINavigationController *navigation,
+                                   UIViewController *root,
+                                   UIViewController *oldTop,
+                                   NSArray<UIViewController *> *originalStack,
+                                   UIView *mask,
+                                   NSUInteger attempt,
+                                   BOOL fallbackPhase) {
     UIViewController *newTop = navigation.topViewController;
-    if (newTop && newTop != oldTop && newTop != root) {
-        [navigation setViewControllers:@[root, newTop] animated:NO];
+    if (newTop && newTop != root && (!oldTop || newTop != oldTop)) {
+        [UIView performWithoutAnimation:^{
+            [navigation setViewControllers:@[root, newTop] animated:NO];
+        }];
         TOWXAck(index);
         gOpenBusy = NO;
-        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-SUCCESS|v11|index=%lu|target=%s|attempt=%lu|newTop=%s",
+        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-SUCCESS|v12|index=%lu|target=%s|attempt=%lu|fallback=%d|newTop=%s",
                 (unsigned long)index,
                 title.UTF8String ?: "?",
                 (unsigned long)attempt,
+                fallbackPhase ? 1 : 0,
                 object_getClassName(newTop) ?: "?");
-        return;
-    }
-    if (attempt < 5) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(22 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
-            TOWXVerifyDirectPush(index, title, hash, navigation, root, oldTop, attempt + 1);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(55 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+            TOWXRemoveDirectSwitchMask(mask, YES);
         });
         return;
     }
-    TOWXFallbackViaRoot(index, title, hash, navigation);
+
+    if (attempt < 7) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+            TOWXVerifyMaskedSwitch(index, title, hash, navigation, root, oldTop, originalStack, mask, attempt + 1, fallbackPhase);
+        });
+        return;
+    }
+
+    if (!fallbackPhase) {
+        TOWXMaskedFallback(index, title, hash, navigation, root, oldTop, originalStack, mask);
+        return;
+    }
+
+    if (originalStack.count) [navigation setViewControllers:originalStack animated:NO];
+    TOWXRemoveDirectSwitchMask(mask, NO);
+    gOpenBusy = NO;
+    TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|target=%s|reason=no-target-after-masked-fallback",
+            (unsigned long)index,
+            title.UTF8String ?: "?");
 }
 
 static void TOWXOpenRecent(NSUInteger index) {
@@ -551,7 +636,7 @@ static void TOWXOpenRecent(NSUInteger index) {
 
         NSIndexPath *path = TOWXFindPathForIdentity(table, title, hash);
         if (!path) {
-            TOWXLog("TOWX|WX|P2A4|OPEN-REJECT|v11|index=%lu|reason=identity-not-found|target=%s",
+            TOWXLog("TOWX|WX|P2A4|OPEN-REJECT|v12|index=%lu|reason=identity-not-found|target=%s",
                     (unsigned long)index,
                     title.UTF8String ?: "?");
             return;
@@ -562,6 +647,7 @@ static void TOWXOpenRecent(NSUInteger index) {
         if (!navigation || navigation.viewControllers.count == 0) return;
         UIViewController *root = navigation.viewControllers.firstObject;
         UIViewController *oldTop = navigation.topViewController;
+        NSArray<UIViewController *> *originalStack = [navigation.viewControllers copy];
         gOpenBusy = YES;
 
         if (oldTop == root) {
@@ -569,21 +655,25 @@ static void TOWXOpenRecent(NSUInteger index) {
             return;
         }
 
-        BOOL animationsEnabled = [UIView areAnimationsEnabled];
-        [UIView setAnimationsEnabled:NO];
-        BOOL selected = TOWXSelectPath(table, path);
-        [UIView setAnimationsEnabled:animationsEnabled];
+        UIView *mask = TOWXInstallDirectSwitchMask(window);
+        __block BOOL selected = NO;
+        [UIView performWithoutAnimation:^{ selected = TOWXSelectPath(table, path); }];
         if (!selected) {
-            TOWXFallbackViaRoot(index, title, hash, navigation);
+            TOWXRemoveDirectSwitchMask(mask, NO);
+            gOpenBusy = NO;
+            TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-FAIL|v12|index=%lu|reason=direct-select-failed|target=%s",
+                    (unsigned long)index,
+                    title.UTF8String ?: "?");
             return;
         }
 
-        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-BEGIN|v11|index=%lu|target=%s|oldTop=%s|depth=%lu",
+        TOWXLog("TOWX|WX|P2A4|DIRECT-SWITCH-BEGIN|v12|index=%lu|target=%s|oldTop=%s|depth=%lu|mask=%d",
                 (unsigned long)index,
                 title.UTF8String ?: "?",
                 object_getClassName(oldTop) ?: "?",
-                (unsigned long)navigation.viewControllers.count);
-        TOWXVerifyDirectPush(index, title, hash, navigation, root, oldTop, 0);
+                (unsigned long)navigation.viewControllers.count,
+                mask ? 1 : 0);
+        TOWXVerifyMaskedSwitch(index, title, hash, navigation, root, oldTop, originalStack, mask, 0, NO);
     }
 }
 
@@ -612,7 +702,7 @@ static void TOWXTick(void) {
 }
 
 static void TOWXStart(void) {
-    TOWXLog("TOWX|WX|P2A4|ADAPTER-START|v0.10.1|mode=standalone-optional+table-discovery+first15+direct-switch|max=15");
+    TOWXLog("TOWX|WX|P2A4|ADAPTER-START|v0.10.2|mode=standalone-optional+table-discovery+first15+direct-switch|max=15");
     TOWXLog("TOWX|WX|P2A4|STANDALONE-MISSING|v11|fallback=table-discovery|policy=standalone-not-required");
 
     if (!TOWXRegisterState(TOWX_LINK_GENERATION, &gGenerationToken) ||
