@@ -1,0 +1,110 @@
+name: Build TOWX V11 Smooth Fix7
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - 'SpringBoardDataBridge/**'
+      - 'WeChatGoldenAdapter/**'
+      - '.github/workflows/build-v11-fix7.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: towx-v11-fix7-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build SpringBoard Fix7
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          mkdir -p ../out-fix7/springboard
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          test "$(dpkg-deb -f "$DEB" Version)" = "0.11.7-smooth1-fix7"
+          cp "$DEB" ../out-fix7/springboard/TOWX-SpringBoard-V11-Smooth1-Fix7.deb
+          dpkg-deb -x "$DEB" ../out-fix7/springboard/extracted
+          DYLIB="$(find ../out-fix7/springboard/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          test -n "$DYLIB"
+          strings "$DYLIB" > ../out-fix7/springboard/strings.txt
+          grep -F 'Smooth1-FIX7|strict-split-identity|dynamic-getters+ivars|fail-closed' ../out-fix7/springboard/strings.txt
+          grep -F 'Smooth1-FIX7|SplitIdentity-authoritative|wechat-only|qq-other-hide|unresolved-hide' ../out-fix7/springboard/strings.txt
+          grep -F 'Smooth1-FIX7|physical-orientation|landscape-right-vertical|portrait-95pct' ../out-fix7/springboard/strings.txt
+          grep -F 'Smooth1-FIX6B|strict-keyboard-geometry|fullscreen-input-host-reject|did-hide-authoritative-reset' ../out-fix7/springboard/strings.txt
+          grep -F 'Smooth1-FIX5|15-cells+44pt+integer-visible-slots+8pt-visual-gap+smooth-scroll' ../out-fix7/springboard/strings.txt
+          lipo -info "$DYLIB" | tee ../out-fix7/springboard/lipo.txt
+          lipo -info "$DYLIB" | grep -q 'arm64'
+          lipo -info "$DYLIB" | grep -q 'arm64e'
+          cp "$DYLIB" ../out-fix7/springboard/TOWXSpringBoardDataBridge.dylib
+          shasum -a 256 "$DYLIB" > ../out-fix7/springboard/SHA256SUMS.txt
+
+      - name: Build WeChat Fix7
+        working-directory: WeChatGoldenAdapter
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64" TARGET="$TARGET_VALUE"
+          mkdir -p ../out-fix7/wechat
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          test "$(dpkg-deb -f "$DEB" Version)" = "0.10.2-fix7"
+          cp "$DEB" ../out-fix7/wechat/TOWX-WeChat-GoldenAdapter-0.10.2-Fix7.deb
+          dpkg-deb -x "$DEB" ../out-fix7/wechat/extracted
+          DYLIB="$(find ../out-fix7/wechat/extracted -name 'TOWXGoldenAdapter.dylib' -type f -print -quit)"
+          test -n "$DYLIB"
+          strings "$DYLIB" > ../out-fix7/wechat/strings.txt
+          grep -F 'DIRECT-SWITCH-MASK|v12|state=installed' ../out-fix7/wechat/strings.txt
+          grep -F 'DIRECT-SWITCH-MASKED-FALLBACK|v12' ../out-fix7/wechat/strings.txt
+          grep -F 'DIRECT-SWITCH-SUCCESS|v12' ../out-fix7/wechat/strings.txt
+          grep -F 'TOWX|WX|P2A4|PUBLISH|v11' ../out-fix7/wechat/strings.txt
+          lipo -info "$DYLIB" | tee ../out-fix7/wechat/lipo.txt
+          lipo -info "$DYLIB" | grep -q 'arm64'
+          shasum -a 256 "$DYLIB" > ../out-fix7/wechat/SHA256SUMS.txt
+
+      - name: Upload Fix7
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-V11-Smooth1-Fix7
+          path: |
+            out-fix7/springboard/TOWX-SpringBoard-V11-Smooth1-Fix7.deb
+            out-fix7/springboard/TOWXSpringBoardDataBridge.dylib
+            out-fix7/springboard/SHA256SUMS.txt
+            out-fix7/wechat/TOWX-WeChat-GoldenAdapter-0.10.2-Fix7.deb
+            out-fix7/wechat/SHA256SUMS.txt
