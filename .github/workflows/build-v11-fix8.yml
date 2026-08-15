@@ -112,3 +112,5 @@ jobs:
             out-fix8/wechat/TOWX-WeChat-GoldenAdapter-0.10.3-Fix8.deb
             out-fix8/wechat/TOWXGoldenAdapter.dylib
             out-fix8/wechat/SHA256SUMS.txt
+
+# rebuild-marker: syntax-corrected-passive-head
