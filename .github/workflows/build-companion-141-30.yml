@@ -87,11 +87,24 @@ jobs:
           dpkg-deb -x "$SB_DEB" sb-root
           dpkg-deb -x "$WX_DEB" wx-root
 
-          mkdir -p companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries
-          cp sb-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.dylib companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp sb-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.plist companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp wx-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXGoldenAdapter.dylib companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
-          cp wx-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXGoldenAdapter.plist companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          SB_DYLIB="$(find sb-root -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          SB_PLIST="$(find sb-root -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
+          WX_DYLIB="$(find wx-root -name 'TOWXGoldenAdapter.dylib' -type f -print -quit)"
+          WX_PLIST="$(find wx-root -name 'TOWXGoldenAdapter.plist' -type f -print -quit)"
+          test -n "$SB_DYLIB" && test -n "$SB_PLIST" && test -n "$WX_DYLIB" && test -n "$WX_PLIST"
+
+          SB_DYLIB_REL="${SB_DYLIB#sb-root/}"
+          SB_PLIST_REL="${SB_PLIST#sb-root/}"
+          WX_DYLIB_REL="${WX_DYLIB#wx-root/}"
+          WX_PLIST_REL="${WX_PLIST#wx-root/}"
+          mkdir -p "companion-root/$(dirname "$SB_DYLIB_REL")" "companion-root/$(dirname "$SB_PLIST_REL")"
+          mkdir -p "companion-root/$(dirname "$WX_DYLIB_REL")" "companion-root/$(dirname "$WX_PLIST_REL")"
+          cp "$SB_DYLIB" "companion-root/$SB_DYLIB_REL"
+          cp "$SB_PLIST" "companion-root/$SB_PLIST_REL"
+          cp "$WX_DYLIB" "companion-root/$WX_DYLIB_REL"
+          cp "$WX_PLIST" "companion-root/$WX_PLIST_REL"
+
+          printf 'SB path: %s\nWX path: %s\n' "$SB_DYLIB_REL" "$WX_DYLIB_REL" | tee out/tweak-paths.txt
 
           cat > companion-root/DEBIAN/control <<'EOF'
           Package: com.dream.towx.companion
@@ -115,8 +128,9 @@ jobs:
       - name: Verify binaries and package isolation
         run: |
           set -euo pipefail
-          SB='companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.dylib'
-          WX='companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXGoldenAdapter.dylib'
+          SB="$(find companion-root -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          WX="$(find companion-root -name 'TOWXGoldenAdapter.dylib' -type f -print -quit)"
+          test -n "$SB" && test -n "$WX"
           strings "$SB" > out/sb-strings.txt
           strings "$WX" > out/wx-strings.txt
 
@@ -156,3 +170,4 @@ jobs:
             out/sb-lipo.txt
             out/wx-lipo.txt
             out/companion-files.txt
+            out/tweak-paths.txt
