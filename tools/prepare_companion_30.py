@@ -35,4 +35,11 @@ replace_required(follower,
                  'LOADED|Smooth1-FIX5|screen-coordinate-space+landscape-fullheight-card+presentation+displaylink',
                  'LOADED|Companion141-30|landscape-narrow-card-priority+presentation+displaylink')
 
+# V13 uses the nil-coalescing expression as a receiver. Objective-C needs parentheses around
+# that expression; otherwise clang interprets the doubled '[' as a nested message expression.
+wechat = ROOT / "WeChatGoldenAdapter" / "TOWXGoldenAdapterV13Thirty.m"
+replace_required(wechat,
+                 '        if ([[TOWXTitleFromCell(cell) ?: @""] isEqualToString:target]) return path;',
+                 '        NSString *visibleTitle = TOWXTitleFromCell(cell) ?: @"";\n        if ([visibleTitle isEqualToString:target]) return path;')
+
 print("Prepared TOWX Companion 1.4.1 / 30-recents sources")
