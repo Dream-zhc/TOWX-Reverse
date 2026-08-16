@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.goldenadapter
-Name: TOWX WeChat Golden Adapter P2A4 Product
-Version: 0.10.3-fix8
+Name: TOWX WeChat 30 Recent Adapter
+Version: 0.11.0-thirty
 Architecture: iphoneos-arm64
-Description: TOWX WeChat Fix8 passive adapter: visible-cell-only capture, no offscreen cell construction, no global UIView hooks, no guard polling timer, scroll-time scan suppression, background PNG export, and masked direct chat-to-chat switching.
+Description: Low-intrusion WeChat adapter for up to 30 recent conversations. Uses idle incremental one-cell prefetch, pauses completely during scrolling, keeps global UIView hooks disabled, exports PNG off the main thread, and preserves masked direct chat-to-chat switching.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
