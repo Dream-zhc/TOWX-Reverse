@@ -1,0 +1,158 @@
+name: Build TOWX Companion 1.4.1 30 Recents
+
+on:
+  push:
+    branches:
+      - feature/towx-companion-1.4.1-30
+    paths:
+      - 'SpringBoardDataBridge/**'
+      - 'WeChatGoldenAdapter/**'
+      - 'tools/prepare_companion_30.py'
+      - '.github/workflows/build-companion-141-30.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: towx-companion-141-30-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Prepare 30-recents Companion sources
+        run: |
+          set -euo pipefail
+          python3 tools/prepare_companion_30.py
+          grep -F 'TOWXV11_MAX_RECENTS_FIX3 30U' SpringBoardDataBridge/TOWXV11DataControllerFix3.m
+          grep -F 'kTOWXV11MaxAvatarsFix3 = 30' SpringBoardDataBridge/TOWXV11AvatarViewFix3.m
+          grep -F 'targetArea = landscape ? 0.21' SpringBoardDataBridge/TOWXV11WindowFollowerFix3.m
+          grep -F '#define TOWX_MAX_RECENTS 30U' WeChatGoldenAdapter/TOWXGoldenAdapterV13Thirty.m
+
+      - name: Build SpringBoard Companion bridge
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+
+      - name: Build WeChat 30-recents adapter
+        working-directory: WeChatGoldenAdapter
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64" TARGET="$TARGET_VALUE"
+
+      - name: Assemble independent Companion package
+        run: |
+          set -euo pipefail
+          mkdir -p out sb-root wx-root companion-root/DEBIAN
+          SB_DEB="$(find SpringBoardDataBridge/packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          WX_DEB="$(find WeChatGoldenAdapter/packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$SB_DEB"
+          test -n "$WX_DEB"
+
+          cp "$SB_DEB" out/TOWX-SpringBoard-30-Recents.deb
+          cp "$WX_DEB" out/TOWX-WeChat-30-Recents.deb
+          dpkg-deb -x "$SB_DEB" sb-root
+          dpkg-deb -x "$WX_DEB" wx-root
+
+          mkdir -p companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries
+          cp sb-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.dylib companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp sb-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.plist companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp wx-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXGoldenAdapter.dylib companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp wx-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXGoldenAdapter.plist companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/
+
+          cat > companion-root/DEBIAN/control <<'EOF'
+          Package: com.dream.towx.companion
+          Name: TOWX Companion for TrollOpen
+          Version: 0.12.0-141-thirty
+          Architecture: iphoneos-arm64
+          Description: Independent TOWX companion for official TrollOpen 1.4.1+. Provides SpringBoard avatar overlay plus low-intrusion WeChat recent-conversation integration with up to 30 avatars. Does not replace or modify TrollOpen core dylibs.
+          Maintainer: Dream-zhc
+          Author: Dream-zhc
+          Section: Tweaks
+          Depends: firmware (>= 16.0), mobilesubstrate, com.charlieleung.trollopenjb (>= 1.4.1)
+          Conflicts: com.dream.towxreverse.sbdatabridge, com.dream.towxreverse.goldenadapter
+          Replaces: com.dream.towxreverse.sbdatabridge, com.dream.towxreverse.goldenadapter
+          Provides: com.dream.towxreverse.sbdatabridge, com.dream.towxreverse.goldenadapter
+          EOF
+          sed -i '' 's/^          //' companion-root/DEBIAN/control
+          chmod 0755 companion-root/DEBIAN
+
+          dpkg-deb --build --root-owner-group companion-root out/TOWX-Companion-TrollOpen-1.4.1-30-Recents.deb
+
+      - name: Verify binaries and package isolation
+        run: |
+          set -euo pipefail
+          SB='companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXSpringBoardDataBridge.dylib'
+          WX='companion-root/var/jb/Library/MobileSubstrate/DynamicLibraries/TOWXGoldenAdapter.dylib'
+          strings "$SB" > out/sb-strings.txt
+          strings "$WX" > out/wx-strings.txt
+
+          grep -F 'Companion141-30|30-recents+background-imageio' out/sb-strings.txt
+          grep -F 'Companion141-30|30-cells+44pt+integer-visible-slots+8pt-visual-gap+smooth-scroll' out/sb-strings.txt
+          grep -F 'Companion141-30|landscape-narrow-card-priority+presentation+displaylink' out/sb-strings.txt
+          grep -F 'Smooth1-FIX9|resolved-identity-authoritative+wechat-active-recovery' out/sb-strings.txt
+          grep -F 'TOWX|WX|THIRTY|ADAPTER-START|v0.11.0|recent=30' out/wx-strings.txt
+          grep -F 'PREFETCH-BEGIN' out/wx-strings.txt
+          grep -F 'DIRECT-SWITCH-SUCCESS' out/wx-strings.txt
+
+          lipo -info "$SB" | tee out/sb-lipo.txt
+          lipo -info "$SB" | grep -q arm64
+          lipo -info "$SB" | grep -q arm64e
+          lipo -info "$WX" | tee out/wx-lipo.txt
+          lipo -info "$WX" | grep -q arm64
+
+          test "$(dpkg-deb -f out/TOWX-Companion-TrollOpen-1.4.1-30-Recents.deb Package)" = 'com.dream.towx.companion'
+          test "$(dpkg-deb -f out/TOWX-Companion-TrollOpen-1.4.1-30-Recents.deb Version)" = '0.12.0-141-thirty'
+          dpkg-deb -c out/TOWX-Companion-TrollOpen-1.4.1-30-Recents.deb | tee out/companion-files.txt
+          if grep -q 'TrollOpenJB.dylib\|TrollOpenCamera.dylib\|TrollOpenKeyboard.dylib' out/companion-files.txt; then
+            echo 'ERROR: Companion must not ship TrollOpen core files'
+            exit 1
+          fi
+
+          shasum -a 256 out/*.deb "$SB" "$WX" > out/SHA256SUMS.txt
+
+      - name: Upload Companion artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-Companion-1.4.1-30-Recents
+          path: |
+            out/TOWX-Companion-TrollOpen-1.4.1-30-Recents.deb
+            out/TOWX-WeChat-30-Recents.deb
+            out/TOWX-SpringBoard-30-Recents.deb
+            out/SHA256SUMS.txt
+            out/sb-lipo.txt
+            out/wx-lipo.txt
+            out/companion-files.txt
