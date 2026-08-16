@@ -1,0 +1,94 @@
+name: Build TOWX V11 Smooth Fix9
+
+on:
+  push:
+    branches:
+      - test/trollopen-1.4.0-v11-smooth
+    paths:
+      - 'SpringBoardDataBridge/**'
+      - '.github/workflows/build-v11-fix9.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: towx-v11-fix9-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14-arm64
+    timeout-minutes: 20
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+      THEOS_PACKAGE_SCHEME: roothide
+
+    steps:
+      - name: Checkout Fix9 HEAD
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build and verify SpringBoard Fix9
+        working-directory: SpringBoardDataBridge
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make clean THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET="$TARGET_VALUE"
+
+          mkdir -p ../out-fix9
+          DEB="$(find packages -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB"
+          test "$(dpkg-deb -f "$DEB" Version)" = "0.11.9-smooth1-fix9"
+          cp "$DEB" ../out-fix9/TOWX-SpringBoard-V11-Smooth1-Fix9.deb
+          dpkg-deb -x "$DEB" ../out-fix9/extracted
+
+          DYLIB="$(find ../out-fix9/extracted -name 'TOWXSpringBoardDataBridge.dylib' -type f -print -quit)"
+          PLIST="$(find ../out-fix9/extracted -name 'TOWXSpringBoardDataBridge.plist' -type f -print -quit)"
+          test -n "$DYLIB"
+          test -n "$PLIST"
+          strings "$DYLIB" > ../out-fix9/strings.txt
+
+          grep -F 'Smooth1-FIX9|resolved-identity-authoritative+wechat-active-recovery|qq-other-hide|host-wechat-hide' ../out-fix9/strings.txt
+          grep -F 'wechat-active-recovery' ../out-fix9/strings.txt
+          grep -F 'split-not-wechat' ../out-fix9/strings.txt
+          grep -F 'host-is-wechat' ../out-fix9/strings.txt
+          grep -F 'Smooth1-FIX7|physical-orientation|landscape-right-vertical|portrait-95pct' ../out-fix9/strings.txt
+          grep -F 'Smooth1-FIX6B|strict-geometry+fullscreen-host-reject+did-hide-reset' ../out-fix9/strings.txt
+
+          lipo -info "$DYLIB" | tee ../out-fix9/lipo.txt
+          lipo -info "$DYLIB" | grep -q 'arm64'
+          lipo -info "$DYLIB" | grep -q 'arm64e'
+
+          cp "$DYLIB" ../out-fix9/TOWXSpringBoardDataBridge.dylib
+          cp "$PLIST" ../out-fix9/TOWXSpringBoardDataBridge.plist
+          shasum -a 256 ../out-fix9/TOWXSpringBoardDataBridge.dylib ../out-fix9/TOWX-SpringBoard-V11-Smooth1-Fix9.deb > ../out-fix9/SHA256SUMS.txt
+
+      - name: Upload Fix9
+        uses: actions/upload-artifact@v4
+        with:
+          name: TOWX-V11-Smooth1-Fix9
+          path: |
+            out-fix9/TOWX-SpringBoard-V11-Smooth1-Fix9.deb
+            out-fix9/TOWXSpringBoardDataBridge.dylib
+            out-fix9/TOWXSpringBoardDataBridge.plist
+            out-fix9/SHA256SUMS.txt
+            out-fix9/lipo.txt
