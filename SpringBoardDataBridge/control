@@ -1,8 +1,8 @@
 Package: com.dream.towxreverse.sbdatabridge
 Name: TOWX SpringBoard V11 Smooth
-Version: 0.11.8-smooth1-fix8
+Version: 0.11.9-smooth1-fix9
 Architecture: iphoneos-arm64e
-Description: TOWX V11 Smooth Fix8 for TrollOpen 1.4.0 with SplitIdentity-authoritative gating plus positive SessionController WeChat fallback, QQ/other-app fail-closed suppression, physical-orientation landscape right-side vertical rail, Fix6b strict keyboard mutual exclusion, exact 95-percent portrait width, 8-point visual spacing, smooth avatar scrolling, readable diagnostics, minimize hard-hide, and background avatar decoding.
+Description: TOWX V11 Smooth Fix9 for TrollOpen 1.4.0 with resolved split/session identity authoritative gating plus WeChat-active recovery when TrollOpen identity is unresolved, QQ/other-app explicit suppression, host-WeChat suppression, physical-orientation landscape right-side vertical rail, Fix6b strict keyboard mutual exclusion, exact 95-percent portrait width, 8-point visual spacing, smooth avatar scrolling, readable diagnostics, minimize hard-hide, and background avatar decoding.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
