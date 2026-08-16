@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14-arm64
+    runs-on: macos-14
     timeout-minutes: 20
     env:
       THEOS: ${{ github.workspace }}/.theos
