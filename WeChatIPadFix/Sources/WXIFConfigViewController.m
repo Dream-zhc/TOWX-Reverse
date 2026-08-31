@@ -26,7 +26,6 @@
     self.conversationSwitch = [UISwitch new];
     self.conversationSwitch.on = [WXIFSettings conversationPositionFixEnabled];
     [self.conversationSwitch addTarget:self action:@selector(conversationChanged:) forControlEvents:UIControlEventValueChanged];
-
     self.diagnostics = [WXIFConversationFix diagnosticSnapshot];
 }
 
@@ -34,11 +33,7 @@
     [super viewWillAppear:animated];
     [self refreshDiagnostics:nil];
     if (self.diagnosticTimer == nil) {
-        self.diagnosticTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
-                                                               target:self
-                                                             selector:@selector(refreshDiagnostics:)
-                                                             userInfo:nil
-                                                              repeats:YES];
+        self.diagnosticTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(refreshDiagnostics:) userInfo:nil repeats:YES];
     }
 }
 
@@ -58,7 +53,7 @@
     switch (section) {
         case 0: return 2;
         case 1: return 1;
-        case 2: return 9;
+        case 2: return 12;
         default: return 3;
     }
 }
@@ -68,21 +63,20 @@
     switch (section) {
         case 0: return @"导航手势";
         case 1: return @"iPad 登录修复";
-        case 2: return @"会话列表实时诊断";
+        case 2: return @"0.3 主会话 Hook 诊断";
         default: return @"关于";
     }
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     (void)tableView;
-    if (section == 0) return @"侧滑和震动与会话列表修复相互独立。若已有其他侧滑插件，可关闭本插件的侧滑功能。";
-    if (section == 1) return @"0.2 起不再依赖微信的 push/pop 或页面生命周期，而是持续记录消息列表真实位置；列表离屏后返回，如果被重置到顶部，会在短暂修复窗口内恢复。";
-    if (section == 2) return @"测试方法：先在消息列表向下滚动，确认“列表识别=已识别”且“保存位置”有数值；进入任意聊天后状态应变成“等待返回”；返回后若发生跳顶，应看到恢复次数增加。";
-    return @"目标环境：微信 8.0.76，自签 IPA，HBB iPad 登录。插件本身不修改登录状态。";
+    if (section == 0) return @"侧滑和震动与列表修复相互独立。已有替代插件时可以直接关闭。";
+    if (section == 1) return @"0.3 不再猜测任意 UITableView，而是锁定微信主会话控制器及其 m_tableView；只在从聊天返回的短窗口内阻止主表被滚回顶部。";
+    if (section == 2) return @"重点看：主框架类、reload 调用、拦截 offset、拦截 scrollToRow。若仍跳顶，这四项能直接说明微信 8.0.76 实际走了哪条路径。";
+    return @"目标：微信 8.0.76，自签 IPA，HBB iPad 登录。版本 0.3.0。";
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    (void)tableView;
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
 
@@ -98,19 +92,23 @@
         cell.textLabel.text = @"保持会话列表位置";
         cell.accessoryView = self.conversationSwitch;
     } else if (indexPath.section == 2) {
-        NSArray<NSString *> *titles = @[@"列表识别", @"当前标签", @"保存位置", @"当前位置", @"修复状态", @"成功恢复", @"恢复写入", @"列表类 / 页面", @"最后事件"];
-        NSArray<NSString *> *keys = @[@"detected", @"tab", @"saved", @"current", @"state", @"restores", @"writes", @"tableOwner", @"event"];
+        NSArray<NSString *> *titles = @[
+            @"主框架类", @"Hook 状态", @"保存位置", @"当前位置", @"修复状态", @"reload 调用",
+            @"拦截 offset 顶部", @"拦截 scrollToRow", @"恢复写入", @"主表 / 页面", @"候选类", @"最后事件"
+        ];
+        NSArray<NSString *> *keys = @[
+            @"target", @"hooks", @"saved", @"current", @"state", @"reloads",
+            @"blockedOffsets", @"blockedScrolls", @"writes", @"tableOwner", @"candidates", @"event"
+        ];
         cell.textLabel.text = titles[(NSUInteger)indexPath.row];
         NSString *key = keys[(NSUInteger)indexPath.row];
         if ([key isEqualToString:@"tableOwner"]) {
-            NSString *tableClass = self.diagnostics[@"table"] ?: @"-";
-            NSString *ownerClass = self.diagnostics[@"owner"] ?: @"-";
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ / %@", tableClass, ownerClass];
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ / %@", self.diagnostics[@"table"] ?: @"-", self.diagnostics[@"owner"] ?: @"-"];
         } else {
             cell.detailTextLabel.text = self.diagnostics[key] ?: @"-";
         }
         cell.detailTextLabel.adjustsFontSizeToFitWidth = YES;
-        cell.detailTextLabel.minimumScaleFactor = 0.65;
+        cell.detailTextLabel.minimumScaleFactor = 0.55;
     } else if (indexPath.section == 3 && indexPath.row == 0) {
         cell.textLabel.text = @"适配微信";
         cell.detailTextLabel.text = @"8.0.76";
@@ -119,7 +117,7 @@
         cell.detailTextLabel.text = @"HBB";
     } else {
         cell.textLabel.text = @"插件版本";
-        cell.detailTextLabel.text = @"0.2.0";
+        cell.detailTextLabel.text = @"0.3.0";
     }
     return cell;
 }
@@ -128,33 +126,28 @@
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (indexPath.section != 0 || indexPath.row != 1) return;
 
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"返回震动"
-                                                                    message:nil
-                                                             preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"返回震动" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     NSArray<NSDictionary *> *options = @[
         @{@"title": @"关闭", @"value": @(WXIFHapticStyleOff)},
         @{@"title": @"轻", @"value": @(WXIFHapticStyleLight)},
         @{@"title": @"中", @"value": @(WXIFHapticStyleMedium)},
         @{@"title": @"重", @"value": @(WXIFHapticStyleHeavy)},
     ];
-
     __weak typeof(self) weakSelf = self;
     for (NSDictionary *option in options) {
         NSString *title = option[@"title"];
         WXIFHapticStyle value = (WXIFHapticStyle)[option[@"value"] integerValue];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            (void)action;
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [WXIFSettings setHapticStyle:value];
             [weakSelf.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
         }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-
     UIPopoverPresentationController *popover = sheet.popoverPresentationController;
     if (popover != nil) {
-        UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
-        popover.sourceView = cell ?: self.view;
-        popover.sourceRect = cell ? cell.bounds : CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+        UITableViewCell *sourceCell = [tableView cellForRowAtIndexPath:indexPath];
+        popover.sourceView = sourceCell ?: self.view;
+        popover.sourceRect = sourceCell ? sourceCell.bounds : CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
     }
     [self presentViewController:sheet animated:YES completion:nil];
 }
