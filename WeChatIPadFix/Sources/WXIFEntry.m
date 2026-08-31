@@ -5,21 +5,8 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-@interface UINavigationController (WXIFCore)
-- (void)wxif_pushViewController:(UIViewController *)viewController animated:(BOOL)animated;
-@end
-
 @interface UIViewController (WXIFCore)
 - (void)wxif_viewDidAppear:(BOOL)animated;
-@end
-
-@implementation UINavigationController (WXIFCore)
-
-- (void)wxif_pushViewController:(UIViewController *)viewController animated:(BOOL)animated {
-    [WXIFConversationFix prepareForPushFromNavigationController:self];
-    [self wxif_pushViewController:viewController animated:animated];
-}
-
 @end
 
 @implementation UIViewController (WXIFCore)
@@ -31,7 +18,6 @@
     if (navigationController != nil) {
         [WXIFGestureFix prepareNavigationController:navigationController];
     }
-    [WXIFConversationFix viewControllerDidAppear:self];
     [WXIFConfigInstaller inspectViewController:self];
 }
 
@@ -51,12 +37,10 @@ __attribute__((constructor)) static void WXIFInitialize(void) {
 
         [WXIFSettings registerDefaults];
         dispatch_async(dispatch_get_main_queue(), ^{
-            WXIFExchangeInstanceMethods(UINavigationController.class,
-                                        @selector(pushViewController:animated:),
-                                        @selector(wxif_pushViewController:animated:));
             WXIFExchangeInstanceMethods(UIViewController.class,
                                         @selector(viewDidAppear:),
                                         @selector(wxif_viewDidAppear:));
+            [WXIFConversationFix startMonitoring];
         });
     }
 }
