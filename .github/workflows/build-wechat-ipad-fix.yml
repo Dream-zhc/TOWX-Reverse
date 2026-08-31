@@ -49,8 +49,7 @@ jobs:
           strings "$DYLIB" | grep -Fq 'com.tencent.xin'
           strings "$DYLIB" | grep -Fq 'iPad Fix'
           strings "$DYLIB" | grep -Fq '8.0.76'
-          strings "$DYLIB" | grep -Fq '会话列表实时诊断'
-          strings "$DYLIB" | grep -Fq '会话列表重新出现'
+          strings "$DYLIB" | grep -Fq 'WXIFConversationMonitor'
           plutil -p WeChatIPadFix.plist | grep -Fq 'com.tencent.xin'
 
       - name: Build conventional DEB
