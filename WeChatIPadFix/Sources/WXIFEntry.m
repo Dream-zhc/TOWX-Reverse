@@ -1,3 +1,4 @@
+#import "WXIFConfigInstaller.h"
 #import "WXIFConversationFix.h"
 #import "WXIFGestureFix.h"
 #import "WXIFSettings.h"
@@ -31,6 +32,7 @@
         [WXIFGestureFix prepareNavigationController:navigationController];
     }
     [WXIFConversationFix viewControllerDidAppear:self];
+    [WXIFConfigInstaller inspectViewController:self];
 }
 
 @end
