@@ -49,7 +49,9 @@ jobs:
           strings "$DYLIB" | grep -Fq 'com.tencent.xin'
           strings "$DYLIB" | grep -Fq 'iPad Fix'
           strings "$DYLIB" | grep -Fq '8.0.76'
-          strings "$DYLIB" | grep -Fq 'WXIFConversationMonitor'
+          strings "$DYLIB" | grep -Fq 'WXIFMainFrameFix'
+          strings "$DYLIB" | grep -Fq 'NewMainFrameViewController'
+          strings "$DYLIB" | grep -Fq 'reloadSession'
           plutil -p WeChatIPadFix.plist | grep -Fq 'com.tencent.xin'
 
       - name: Build conventional DEB
@@ -63,7 +65,7 @@ jobs:
           cp control "$STAGE/DEBIAN/control"
           cp build/WeChatIPadFix.dylib "$STAGE/Library/MobileSubstrate/DynamicLibraries/WeChatIPadFix.dylib"
           cp WeChatIPadFix.plist "$STAGE/Library/MobileSubstrate/DynamicLibraries/WeChatIPadFix.plist"
-          dpkg-deb -b "$STAGE" "$OUT/WeChatIPadFix_0.2.0.deb"
+          dpkg-deb -b "$STAGE" "$OUT/WeChatIPadFix_0.3.0.deb"
           cp build/WeChatIPadFix.dylib "$OUT/WeChatIPadFix.dylib"
           cp WeChatIPadFix.plist "$OUT/WeChatIPadFix.plist"
 
@@ -72,22 +74,22 @@ jobs:
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/wechat-ipad-fix-verify"
           mkdir -p "$RUNNER_TEMP/wechat-ipad-fix-verify"
-          dpkg-deb -x out/WeChatIPadFix_0.2.0.deb "$RUNNER_TEMP/wechat-ipad-fix-verify"
+          dpkg-deb -x out/WeChatIPadFix_0.3.0.deb "$RUNNER_TEMP/wechat-ipad-fix-verify"
           PACKAGED="$RUNNER_TEMP/wechat-ipad-fix-verify/Library/MobileSubstrate/DynamicLibraries/WeChatIPadFix.dylib"
           test -f "$PACKAGED"
           test "$(lipo -archs "$PACKAGED")" = "arm64"
           RAW_SHA="$(shasum -a 256 out/WeChatIPadFix.dylib | awk '{print $1}')"
           DEB_SHA="$(shasum -a 256 "$PACKAGED" | awk '{print $1}')"
           test "$RAW_SHA" = "$DEB_SHA"
-          shasum -a 256 out/WeChatIPadFix.dylib out/WeChatIPadFix.plist out/WeChatIPadFix_0.2.0.deb > out/SHA256SUMS.txt
+          shasum -a 256 out/WeChatIPadFix.dylib out/WeChatIPadFix.plist out/WeChatIPadFix_0.3.0.deb > out/SHA256SUMS.txt
           cat out/SHA256SUMS.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: WeChatIPadFix-0.2.0
+          name: WeChatIPadFix-0.3.0
           path: |
             out/WeChatIPadFix.dylib
             out/WeChatIPadFix.plist
-            out/WeChatIPadFix_0.2.0.deb
+            out/WeChatIPadFix_0.3.0.deb
             out/SHA256SUMS.txt
