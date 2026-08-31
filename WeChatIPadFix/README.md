@@ -7,53 +7,56 @@ Target environment:
 - HBB provides iPad login mode
 - arm64
 
-The plugin does not modify login state or HBB behavior.
+The plugin does not modify the login state or HBB itself.
 
-## 0.2.0: conversation-list repair redesign
+## 0.3.0: target WeChat's real main conversation controller
 
-The 0.1.x implementation assumed a standard `UINavigationController` push/pop lifecycle. That assumption is not reliable for WeChat 8.0.76 and HBB iPad mode, so 0.2.0 removes the conversation repair from navigation lifecycle hooks completely.
+The 0.1 implementation assumed normal push/pop lifecycle. The 0.2 implementation scanned window-level UITableViews and tried to repair contentOffset after the fact. Phone testing showed neither path affects the HBB iPad-mode jump-to-top bug.
 
-The new repair works as a window-level monitor:
+0.3 removes the generic table monitor. It targets the WeChat main conversation controller directly:
 
-1. While the Chats tab is visible, locate the most likely conversation `UITableView` from the live window hierarchy.
-2. Continuously remember its real `contentOffset` while the user is on the list.
-3. When the conversation list leaves the screen, arm one return repair using the last valid offset.
-4. When the list reappears (including when WeChat/HBB rebuilds the table), open a short 3-second repair window.
-5. If the list is unexpectedly at the top, restore the saved offset. Repeated resets inside the window are repaired again.
-6. If the user starts dragging manually, stop repairing immediately. Switching to another bottom tab also does not trigger a repair.
+1. Prefer `NewMainFrameViewController` when it exists at runtime.
+2. If the name changed, score UIViewController classes containing MainFrame / Session / Conversation traits, `m_tableView`, `tableView:didSelectRowAtIndexPath:` and reload-session methods.
+3. Resolve the controller's real `m_tableView` (with a controller-local table fallback only).
+4. Save its offset in the real chat-selection callback before entering a chat.
+5. Hook no-argument methods whose selector contains `reloadSession`.
+6. During the short return window, protect only that exact main table from `setContentOffset(top)` and `scrollToRow(section=0,row=0)`.
+7. Hook the main table's `reloadData` path and perform repeated restores after layout/reload.
+8. End protection after the real main controller returns and the short protection window becomes stable.
 
-This avoids relying on private WeChat class names, `pushViewController:`, or a specific view-controller instance surviving the chat transition.
+Global UIKit hooks are installed only as interception points and are gated by pointer identity to the resolved main conversation table. Other WeChat tables are not modified.
 
-## Live in-app diagnostics
+## In-app diagnostics
 
 Open WeChat -> Settings -> `iPad Fix`.
 
-The configuration page now shows:
+0.3 reports:
 
-- conversation list detected / not detected;
-- current bottom-tab state;
-- last saved offset;
-- current offset;
-- repair state (`recording`, `waiting for return`, `repair window`);
-- successful repair count;
-- raw restore-write count;
-- detected table class and owning view-controller class;
+- targeted main-frame class;
+- target-hook installation status;
+- saved and current main-table offsets;
+- repair state;
+- `reloadSession*` and table `reloadData` counts;
+- blocked top `setContentOffset` count;
+- blocked `scrollToRow(0,0)` count;
+- restore-write / success counts;
+- resolved main-table and owner class;
+- runtime candidate classes;
 - last repair event.
 
-This is intentionally included because a GitHub runner cannot observe the real HBB/WeChat runtime. A phone-side test can therefore identify exactly which stage fails without requiring system logs.
+This makes a phone-side failure actionable even without external logs: if the main-frame class is not resolved we know discovery failed; if reload counters change we know the WeChat-internal refresh path is active; if top-scroll counters change we know the actual jump request has been intercepted.
 
 ## Other features
 
-- Edge-back helper remains available but is independent of the list repair.
-- Haptic strength can still be configured; it is not required for the conversation-list fix.
+- Edge-back helper and configurable haptics remain available but are independent of the conversation-list repair.
 
 ## Build outputs
 
-GitHub Actions builds and uploads:
+GitHub Actions uploads:
 
-- `WeChatIPadFix.dylib` — preferred for self-signed IPA injection
+- `WeChatIPadFix.dylib`
 - `WeChatIPadFix.plist`
-- `WeChatIPadFix_0.2.0.deb`
+- `WeChatIPadFix_0.3.0.deb`
 - `SHA256SUMS.txt`
 
-The dylib is built directly with Apple's iPhoneOS SDK and has no intentional dependency on CydiaSubstrate, libhooker, ElleKit, RootHide, or Theos runtime libraries.
+The dylib is built directly against Apple's iPhoneOS SDK with no intentional dependency on CydiaSubstrate, libhooker, ElleKit or RootHide runtime libraries.
