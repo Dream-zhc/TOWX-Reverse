@@ -16,7 +16,7 @@ $(OUTPUT): $(SOURCES)
 	$(CLANG) -target $(TARGET) -isysroot $(SDK) -fobjc-arc -fblocks \
 		-Wall -Wextra -Werror -Wno-deprecated-declarations \
 		-dynamiclib -install_name @rpath/WeChatIPadFix.dylib \
-		-framework Foundation -framework UIKit \
+		-framework Foundation -framework UIKit -framework CoreGraphics \
 		-Wl,-dead_strip -o $@ $(SOURCES)
 
 clean:
