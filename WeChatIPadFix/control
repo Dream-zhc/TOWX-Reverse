@@ -1,8 +1,8 @@
 Package: com.dream.wechatipadfix
 Name: WeChat iPad Fix
-Version: 0.2.0
+Version: 0.3.0
 Architecture: iphoneos-arm
-Description: WeChat 8.0.76 HBB iPad-mode UI repair with monitor-driven conversation-list position restore and in-app diagnostics.
+Description: WeChat 8.0.76 HBB iPad-mode conversation-list repair targeting the real main-frame controller, reloadSessions and top-scroll calls.
 Maintainer: Dream-zhc
 Author: Dream-zhc
 Section: Tweaks
