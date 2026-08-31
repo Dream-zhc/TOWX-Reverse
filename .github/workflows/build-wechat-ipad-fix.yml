@@ -1,0 +1,92 @@
+name: Build WeChat iPad Fix
+
+on:
+  push:
+    branches:
+      - feat/wechat-ipad-fix
+    paths:
+      - 'WeChatIPadFix/**'
+      - '.github/workflows/build-wechat-ipad-fix.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packaging tools
+        run: brew install dpkg
+
+      - name: Run restore-policy tests
+        working-directory: WeChatIPadFix
+        run: |
+          set -euo pipefail
+          make test
+
+      - name: Build arm64 injected dylib
+        working-directory: WeChatIPadFix
+        run: |
+          set -euo pipefail
+          make clean
+          make all
+          codesign --force --sign - build/WeChatIPadFix.dylib
+          codesign --verify --verbose=2 build/WeChatIPadFix.dylib
+
+      - name: Verify Mach-O and dependencies
+        working-directory: WeChatIPadFix
+        run: |
+          set -euo pipefail
+          DYLIB=build/WeChatIPadFix.dylib
+          test "$(lipo -archs "$DYLIB")" = "arm64"
+          file "$DYLIB"
+          otool -L "$DYLIB" | tee build/otool.txt
+          if grep -Eiq 'CydiaSubstrate|libsubstrate|libhooker|ElleKit|roothide' build/otool.txt; then
+            echo 'Unexpected jailbreak runtime dependency detected' >&2
+            exit 1
+          fi
+          strings "$DYLIB" | grep -Fq 'com.tencent.xin'
+          strings "$DYLIB" | grep -Fq 'iPad Fix'
+          strings "$DYLIB" | grep -Fq '8.0.76'
+          plutil -p WeChatIPadFix.plist | grep -Fq 'com.tencent.xin'
+
+      - name: Build conventional DEB
+        working-directory: WeChatIPadFix
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/wechat-ipad-fix-deb"
+          OUT="$GITHUB_WORKSPACE/out"
+          rm -rf "$STAGE" "$OUT"
+          mkdir -p "$STAGE/DEBIAN" "$STAGE/Library/MobileSubstrate/DynamicLibraries" "$OUT"
+          cp control "$STAGE/DEBIAN/control"
+          cp build/WeChatIPadFix.dylib "$STAGE/Library/MobileSubstrate/DynamicLibraries/WeChatIPadFix.dylib"
+          cp WeChatIPadFix.plist "$STAGE/Library/MobileSubstrate/DynamicLibraries/WeChatIPadFix.plist"
+          dpkg-deb -b "$STAGE" "$OUT/WeChatIPadFix_0.1.0.deb"
+          cp build/WeChatIPadFix.dylib "$OUT/WeChatIPadFix.dylib"
+          cp WeChatIPadFix.plist "$OUT/WeChatIPadFix.plist"
+
+      - name: Verify DEB payload
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/wechat-ipad-fix-verify"
+          mkdir -p "$RUNNER_TEMP/wechat-ipad-fix-verify"
+          dpkg-deb -x out/WeChatIPadFix_0.1.0.deb "$RUNNER_TEMP/wechat-ipad-fix-verify"
+          PACKAGED="$RUNNER_TEMP/wechat-ipad-fix-verify/Library/MobileSubstrate/DynamicLibraries/WeChatIPadFix.dylib"
+          test -f "$PACKAGED"
+          test "$(lipo -archs "$PACKAGED")" = "arm64"
+          RAW_SHA="$(shasum -a 256 out/WeChatIPadFix.dylib | awk '{print $1}')"
+          DEB_SHA="$(shasum -a 256 "$PACKAGED" | awk '{print $1}')"
+          test "$RAW_SHA" = "$DEB_SHA"
+          shasum -a 256 out/WeChatIPadFix.dylib out/WeChatIPadFix.plist out/WeChatIPadFix_0.1.0.deb > out/SHA256SUMS.txt
+          cat out/SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WeChatIPadFix-0.1.0
+          path: |
+            out/WeChatIPadFix.dylib
+            out/WeChatIPadFix.plist
+            out/WeChatIPadFix_0.1.0.deb
+            out/SHA256SUMS.txt

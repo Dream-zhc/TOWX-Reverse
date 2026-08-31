@@ -1,0 +1,9 @@
+Package: com.dream.wechatipadfix
+Name: WeChat iPad Fix
+Version: 0.1.0
+Architecture: iphoneos-arm
+Description: Minimal WeChat 8.0.76 iPad-mode UI fixes: edge-back haptics and conversation-list position restore.
+Maintainer: Dream-zhc
+Author: Dream-zhc
+Section: Tweaks
+Priority: optional

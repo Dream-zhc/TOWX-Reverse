@@ -1,7 +1,7 @@
 #import "WXIFConversationFix.h"
+#import "WXIFRestorePolicy.h"
 #import "WXIFSettings.h"
 #import <UIKit/UIKit.h>
-#import <math.h>
 
 @interface WXIFConversationState : NSObject
 @property (nonatomic, weak) UINavigationController *navigationController;
@@ -129,13 +129,10 @@ static void WXIFAttemptRestore(void) {
 
     CGFloat topY = -table.adjustedContentInset.top;
     CGFloat currentY = table.contentOffset.y;
-    if (state.savedOffsetY <= topY + 100.0) return;
-
-    if (fabs(currentY - state.savedOffsetY) <= 45.0) return;
-
-    // HBB/iPad mode bug presents as an unexpected jump back to the list top.
-    // Only correct that narrow case. Never fight normal user scrolling.
-    if (currentY <= topY + 90.0) {
+    if (WXIFShouldRestoreConversationOffset([WXIFSettings conversationPositionFixEnabled],
+                                            state.savedOffsetY,
+                                            currentY,
+                                            topY)) {
         [table setContentOffset:CGPointMake(table.contentOffset.x, state.savedOffsetY) animated:NO];
         [table layoutIfNeeded];
     }

@@ -102,7 +102,8 @@
     for (NSDictionary *option in options) {
         NSString *title = option[@"title"];
         WXIFHapticStyle value = (WXIFHapticStyle)[option[@"value"] integerValue];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
             [WXIFSettings setHapticStyle:value];
             [weakSelf.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
         }]];
