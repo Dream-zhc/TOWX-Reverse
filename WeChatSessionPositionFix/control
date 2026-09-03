@@ -1,0 +1,8 @@
+Package: com.dream.wxsessionpositionfix
+Name: WX Session Position Fix
+Version: 0.1.0
+Architecture: iphoneos-arm
+Description: Preserve WeChat session-list position when returning from a chat, with in-app diagnostic logs.
+Maintainer: Dream-zhc
+Author: Dream-zhc
+Section: Tweaks

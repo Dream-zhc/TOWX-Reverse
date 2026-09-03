@@ -1,0 +1,122 @@
+name: Build WX Session Position Fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/wechat-session-position-fix-v2
+    paths:
+      - "WeChatSessionPositionFix/**"
+      - ".github/workflows/build-wx-session-position-fix.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      THEOS: ${{ github.workspace }}/.theos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install dpkg ldid
+
+      - name: Install Theos
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" submodule update --init --recursive --depth 1
+
+      - name: Bind Xcode iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$THEOS/sdks"
+          THEOS_SDK="$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          rm -rf "$THEOS_SDK"
+          ln -s "$SDK_PATH" "$THEOS_SDK"
+          echo "SDK_VERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+          echo "THEOS_SDK=$THEOS_SDK" >> "$GITHUB_ENV"
+          echo "SDK=$SDK_VERSION"
+          xcodebuild -version
+
+      - name: Build and package
+        run: |
+          set -euo pipefail
+          TARGET_VALUE="iphone:clang:${SDK_VERSION}:15.0"
+          make -C WeChatSessionPositionFix clean \
+            ARCHS="arm64 arm64e" \
+            TARGET="$TARGET_VALUE"
+          make -C WeChatSessionPositionFix package FINALPACKAGE=1 \
+            ARCHS="arm64 arm64e" \
+            TARGET="$TARGET_VALUE"
+
+      - name: Verify standalone dylib
+        run: |
+          set -euo pipefail
+          DYLIB="$(find WeChatSessionPositionFix/.theos -type f -name 'WXSessionPositionFix.dylib' -print | head -n 1)"
+          test -n "$DYLIB"
+
+          echo "Dylib: $DYLIB"
+          file "$DYLIB"
+          ARCHS_OUT="$(lipo -archs "$DYLIB")"
+          echo "Architectures: $ARCHS_OUT"
+          echo "$ARCHS_OUT" | grep -qw arm64
+          echo "$ARCHS_OUT" | grep -qw arm64e
+
+          echo "--- linked libraries ---"
+          otool -L "$DYLIB"
+          if otool -L "$DYLIB" | grep -Eiq 'CydiaSubstrate|libsubstrate|ElleKit'; then
+            echo "Unexpected hook-runtime dependency found" >&2
+            exit 1
+          fi
+
+          strings "$DYLIB" | grep -Fq 'WX Session Position Fix'
+          strings "$DYLIB" | grep -Fq 'NewMainFrameViewController'
+          strings "$DYLIB" | grep -Fq 'BaseMsgContentViewController'
+
+      - name: Assemble sideload artifact
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist
+
+          DYLIB="$(find WeChatSessionPositionFix/.theos -type f -name 'WXSessionPositionFix.dylib' -print | head -n 1)"
+          cp "$DYLIB" dist/WXSessionPositionFix.dylib
+          cp WeChatSessionPositionFix/WXSessionPositionFix.plist dist/WXSessionPositionFix.plist
+          cp WeChatSessionPositionFix/README.md dist/README.md
+
+          DEB="$(find WeChatSessionPositionFix/packages -maxdepth 1 -type f -name '*.deb' -print | head -n 1 || true)"
+          if [ -n "$DEB" ]; then
+            cp "$DEB" dist/WXSessionPositionFix-0.1.0.deb
+          fi
+
+          (
+            cd dist
+            shasum -a 256 WXSessionPositionFix.dylib WXSessionPositionFix.plist > SHA256SUMS.txt
+            zip -r WXSessionPositionFix-0.1.0-sideload.zip \
+              WXSessionPositionFix.dylib \
+              WXSessionPositionFix.plist \
+              README.md \
+              SHA256SUMS.txt
+          )
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WXSessionPositionFix-0.1.0
+          path: |
+            dist/WXSessionPositionFix-0.1.0-sideload.zip
+            dist/WXSessionPositionFix.dylib
+            dist/WXSessionPositionFix.plist
+            dist/WXSessionPositionFix-0.1.0.deb
+            dist/README.md
+            dist/SHA256SUMS.txt
+          if-no-files-found: warn
